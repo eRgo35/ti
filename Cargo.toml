@@ -1,0 +1,9 @@
+[package]
+name = "ti"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.14", features = ["derive"] }
+crossterm = "0.28.1"
+figlet-rs = "0.1.5"
