@@ -1,13 +1,15 @@
 use clap::Parser;
 
+const NAME: Option<&str> = option_env!("CARGO_PKG_NAME");
 const VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
+const DESCRIPTION: Option<&str> = option_env!("CARGO_PKG_DESCRIPTION");
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "ti",
+    name = NAME.unwrap_or("ti"),
     author = "Michał Czyż",
     version = VERSION.unwrap_or("unknown"),
-    about = "A simple terminal timer",
+    about = DESCRIPTION.unwrap_or("A simple terminal timer"),
     long_about = None
 )]
 pub struct Args {
@@ -37,4 +39,6 @@ pub struct Args {
 
     #[arg(long, default_value_t = String::from(""), help = "Path to cache file")]
     pub cache: String,
+
+    pub time: Option<String>,
 }

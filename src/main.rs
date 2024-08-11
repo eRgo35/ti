@@ -17,16 +17,22 @@ use std::{
 use timer::Timer;
 
 fn main() {
-    let Args {
-        hours,
-        minutes,
-        seconds,
-        font,
-        cache,
-    } = Args::parse();
+    let args = Args::parse();
 
-    let cache = Cache::new(cache);
-    let font = load_font(font);
+    let mut hours = args.hours;
+    let mut minutes = args.minutes;
+    let mut seconds = args.seconds;
+
+    if args.time.is_some() {
+        let time = args.time.unwrap();
+        let mut parts = time.split(':').map(|part| part.parse::<u64>().unwrap());
+        hours = parts.next().unwrap_or(0);
+        minutes = parts.next().unwrap_or(0);
+        seconds = parts.next().unwrap_or(0);
+    }
+
+    let cache = Cache::new(args.cache);
+    let font = load_font(args.font);
     let timer = Arc::new(Mutex::new(
         cache
             .load()
