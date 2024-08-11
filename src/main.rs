@@ -1,11 +1,11 @@
 mod args;
+mod cache;
+mod font;
+mod timer;
 
 use std::{
-    fs::File,
-    io::{stdout, Read, Write},
-    path::PathBuf,
+    io::{stdout, Write},
     process::exit,
-    thread::sleep,
     time::Duration,
 };
 
@@ -19,25 +19,19 @@ use crossterm::{
 };
 
 use args::Args;
+use cache::Cache;
 use clap::Parser;
 use figlet_rs::FIGfont;
+use font::load_font;
+use timer::Timer;
 
 const FONT_WIDTH: usize = 9;
 const REFRESH_RATE: Duration = Duration::from_millis(100);
 
-fn time_to_seconds(hours: u64, minutes: u64, seconds: u64) -> u64 {
-    hours * 3600 + minutes * 60 + seconds
-}
+fn draw_timer(time: &str, font: &FIGfont) {
+    let figure = font.convert(time).unwrap();
 
-fn draw_timer(seconds: u64, font: &FIGfont) {
-    let time = format!(
-        "{:02}:{:02}:{:02}",
-        seconds / 3600,
-        (seconds / 60) % 60,
-        seconds % 60
-    );
-
-    let figure = font.convert(&time).unwrap();
+    // TODO: Calculate figure width and height properly
     let figure_width = (time.len() * FONT_WIDTH) as u16;
     let figure_height = figure.to_string().lines().count() as u16;
 
@@ -64,7 +58,7 @@ fn draw_timer(seconds: u64, font: &FIGfont) {
     stdout.queue(MoveTo(0, terminal_height)).unwrap();
 
     stdout
-        .queue(Print("SPC [Pause/Resume] | R [Reset] | Q [Quit]"))
+        .queue(Print("SPACE [Pause/Resume] | R [Reset] | Q [Quit]"))
         .unwrap();
 
     stdout.flush().unwrap();
@@ -90,42 +84,6 @@ fn handle_keyboard() -> Option<char> {
     None
 }
 
-fn save_countdown_state(cache_file: &PathBuf, countdown: u64) {
-    let state = format!("{}", countdown);
-    let mut file = File::create_new(cache_file).unwrap_or(File::create(cache_file).unwrap());
-    file.write_all(state.as_bytes()).unwrap();
-}
-
-fn load_countdown_state(cache_file: &PathBuf) -> Option<u64> {
-    let mut file = File::open(cache_file).ok()?;
-    let mut countdown = String::new();
-    file.read_to_string(&mut countdown).ok()?;
-
-    let countdown = countdown.trim().parse::<u64>().ok()?;
-
-    Some(countdown)
-}
-
-fn clear_countdown_state(cache_file: &PathBuf) {
-    let _ = std::fs::remove_file(cache_file);
-}
-
-fn load_font(font: String) -> FIGfont {
-    let default_font = FIGfont::standard().unwrap();
-    let ansi_mono = std::include_str!("ANSI_Mono.flf");
-    let ansi_mono_font = FIGfont::from_content(ansi_mono).unwrap_or(default_font);
-
-    FIGfont::from_file(&font).unwrap_or(ansi_mono_font)
-}
-
-fn load_cache(cache: String) -> PathBuf {
-    if cache.is_empty() {
-        std::env::temp_dir().join("ti_countdown.tmp")
-    } else {
-        PathBuf::from(cache)
-    }
-}
-
 fn main() {
     let Args {
         hours,
@@ -135,50 +93,39 @@ fn main() {
         cache,
     } = Args::parse();
 
-    let cache: PathBuf = load_cache(cache);
+    let cache = Cache::new(cache);
     let font = load_font(font);
-    let mut countdown: u64 =
-        load_countdown_state(&cache).unwrap_or(time_to_seconds(hours, minutes, seconds));
+    let mut timer = Timer::new(hours, minutes, seconds);
+
+    let cached_time = cache.load();
+    if cached_time.is_some() {
+        timer = Timer::from_cache(cached_time.unwrap());
+    }
 
     terminal::enable_raw_mode().unwrap();
-    let mut paused = false;
 
     loop {
         if event::poll(REFRESH_RATE).unwrap() {
             if let Some(key) = handle_keyboard() {
                 match key {
                     'q' => break,
-                    's' => {
-                        paused = false;
-                    }
-                    'p' => {
-                        paused = true;
-                    }
-                    ' ' => {
-                        paused = !paused;
-                    }
-                    'r' => {
-                        countdown = time_to_seconds(hours, minutes, seconds);
-                    }
+                    's' => timer.start(),
+                    'p' => timer.pause(),
+                    ' ' => timer.toggle(),
+                    'r' => timer.reset(),
                     _ => {}
                 }
             }
         }
 
-        draw_timer(countdown, &font);
+        let time = timer.print();
+        draw_timer(&time, &font);
 
-        if !paused {
-            sleep(Duration::from_secs(1));
-            if countdown == 0 {
-                break;
-            }
-            countdown -= 1;
-            save_countdown_state(&cache, countdown);
-        }
+        timer.tick();
+        cache.save(timer.countdown());
     }
 
-    clear_countdown_state(&cache);
-
+    cache.clear();
     terminal::disable_raw_mode().unwrap();
     println!();
 }
