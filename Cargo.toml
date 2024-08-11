@@ -1,7 +1,16 @@
 [package]
 name = "ti"
-version = "0.1.0"
+version = "1.1.0"
+authors = ["Michał Czyż <mike@c2yz.com>"]
 edition = "2021"
+
+description = "A simple terminal timer"
+homepage = "https://github.com/eRgo35/ti"
+repository = "https://github.com/eRgo35/ti"
+documentation = "https://github.com/eRgo35/ti"
+keywords = ["timer", "terminal", "tty", "rust", "figlet"]
+license = "MIT"
+readme = "README.md"
 
 [dependencies]
 clap = { version = "4.5.14", features = ["derive"] }

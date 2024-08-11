@@ -118,9 +118,19 @@ fn main() {
         font,
         cache,
     } = Args::parse();
+    let cache: PathBuf = if cache.is_empty() {
+        let mut cache = std::env::temp_dir();
+        cache.push("ti_countdown.tmp");
+        cache
+    } else {
+        cache.into()
+    };
     let mut countdown: u64 =
         retrieve_countdown_state(&cache).unwrap_or(time_to_seconds(hours, minutes, seconds));
-    let font = FIGfont::from_file(font.to_str().unwrap()).unwrap_or(FIGfont::standard().unwrap());
+    let default_font = FIGfont::standard().unwrap();
+    let ansi_mono = std::include_str!("ANSI_Mono.flf");
+    let ansi_mono_font = FIGfont::from_content(ansi_mono).unwrap_or(default_font);
+    let font = FIGfont::from_file(&font).unwrap_or(ansi_mono_font);
 
     terminal::enable_raw_mode().unwrap();
     let mut paused = false;
