@@ -90,13 +90,13 @@ fn handle_keyboard() -> Option<char> {
     None
 }
 
-fn preserve_countdown_state(cache_file: &PathBuf, countdown: u64) {
+fn save_countdown_state(cache_file: &PathBuf, countdown: u64) {
     let state = format!("{}", countdown);
     let mut file = File::create_new(cache_file).unwrap_or(File::create(cache_file).unwrap());
     file.write_all(state.as_bytes()).unwrap();
 }
 
-fn retrieve_countdown_state(cache_file: &PathBuf) -> Option<u64> {
+fn load_countdown_state(cache_file: &PathBuf) -> Option<u64> {
     let mut file = File::open(cache_file).ok()?;
     let mut countdown = String::new();
     file.read_to_string(&mut countdown).ok()?;
@@ -138,7 +138,7 @@ fn main() {
     let cache: PathBuf = load_cache(cache);
     let font = load_font(font);
     let mut countdown: u64 =
-        retrieve_countdown_state(&cache).unwrap_or(time_to_seconds(hours, minutes, seconds));
+        load_countdown_state(&cache).unwrap_or(time_to_seconds(hours, minutes, seconds));
 
     terminal::enable_raw_mode().unwrap();
     let mut paused = false;
@@ -173,7 +173,7 @@ fn main() {
                 break;
             }
             countdown -= 1;
-            preserve_countdown_state(&cache, countdown);
+            save_countdown_state(&cache, countdown);
         }
     }
 
