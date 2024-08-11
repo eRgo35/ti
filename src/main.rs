@@ -6,6 +6,8 @@ mod timer;
 use std::{
     io::{stdout, Write},
     process::exit,
+    sync::{Arc, Mutex},
+    thread,
     time::Duration,
 };
 
@@ -95,12 +97,11 @@ fn main() {
 
     let cache = Cache::new(cache);
     let font = load_font(font);
-    let mut timer = Timer::new(hours, minutes, seconds);
 
-    let cached_time = cache.load();
-    if cached_time.is_some() {
-        timer = Timer::from_cache(cached_time.unwrap());
-    }
+    let mut timer = cache
+        .load()
+        .map(Timer::from_cache)
+        .unwrap_or_else(|| Timer::new(hours, minutes, seconds));
 
     terminal::enable_raw_mode().unwrap();
 
