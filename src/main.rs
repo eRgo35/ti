@@ -110,6 +110,22 @@ fn clear_countdown_state(cache_file: &PathBuf) {
     let _ = std::fs::remove_file(cache_file);
 }
 
+fn load_font(font: String) -> FIGfont {
+    let default_font = FIGfont::standard().unwrap();
+    let ansi_mono = std::include_str!("ANSI_Mono.flf");
+    let ansi_mono_font = FIGfont::from_content(ansi_mono).unwrap_or(default_font);
+
+    FIGfont::from_file(&font).unwrap_or(ansi_mono_font)
+}
+
+fn load_cache(cache: String) -> PathBuf {
+    if cache.is_empty() {
+        std::env::temp_dir().join("ti_countdown.tmp")
+    } else {
+        PathBuf::from(cache)
+    }
+}
+
 fn main() {
     let Args {
         hours,
@@ -118,19 +134,11 @@ fn main() {
         font,
         cache,
     } = Args::parse();
-    let cache: PathBuf = if cache.is_empty() {
-        let mut cache = std::env::temp_dir();
-        cache.push("ti_countdown.tmp");
-        cache
-    } else {
-        cache.into()
-    };
+
+    let cache: PathBuf = load_cache(cache);
+    let font = load_font(font);
     let mut countdown: u64 =
         retrieve_countdown_state(&cache).unwrap_or(time_to_seconds(hours, minutes, seconds));
-    let default_font = FIGfont::standard().unwrap();
-    let ansi_mono = std::include_str!("ANSI_Mono.flf");
-    let ansi_mono_font = FIGfont::from_content(ansi_mono).unwrap_or(default_font);
-    let font = FIGfont::from_file(&font).unwrap_or(ansi_mono_font);
 
     terminal::enable_raw_mode().unwrap();
     let mut paused = false;
