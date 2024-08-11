@@ -142,9 +142,9 @@ fn main() {
         draw_timer(&time, &font);
     }
 
+    terminal::disable_raw_mode().unwrap();
+    println!("\nQuitting...");
+
     countdown_thread.join().unwrap();
     cache.clear();
-
-    terminal::disable_raw_mode().unwrap();
-    println!();
 }

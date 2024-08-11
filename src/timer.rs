@@ -31,7 +31,6 @@ impl Timer {
         self.countdown = 0;
     }
 
-    #[allow(dead_code)]
     pub fn start(&mut self) {
         self.paused = false;
     }
@@ -63,6 +62,7 @@ impl Timer {
         self.countdown == 0
     }
 
+    #[allow(dead_code)]
     pub fn is_paused(&self) -> bool {
         self.paused
     }
