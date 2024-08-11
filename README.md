@@ -44,7 +44,7 @@ $ makepkg -si
 
 ## Usage
 
-```sh
+```
 $ ti --help
 A simple terminal timer
 
