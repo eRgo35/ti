@@ -98,18 +98,37 @@ fn main() {
     let cache = Cache::new(cache);
     let font = load_font(font);
 
-    let mut timer = cache
-        .load()
-        .map(Timer::from_cache)
-        .unwrap_or_else(|| Timer::new(hours, minutes, seconds));
+    let timer = Arc::new(Mutex::new(
+        cache
+            .load()
+            .map(Timer::from_cache)
+            .unwrap_or_else(|| Timer::new(hours, minutes, seconds)),
+    ));
+
+    let timer_clone = Arc::clone(&timer);
+    let cache_clone = cache.clone();
+
+    let countdown_thread = thread::spawn(move || loop {
+        thread::sleep(Duration::from_secs(1));
+        let mut timer = timer_clone.lock().unwrap();
+        timer.tick();
+        cache_clone.save(timer.countdown());
+        if timer.is_finished() {
+            break;
+        }
+    });
 
     terminal::enable_raw_mode().unwrap();
 
     loop {
         if event::poll(REFRESH_RATE).unwrap() {
             if let Some(key) = handle_keyboard() {
+                let mut timer = timer.lock().unwrap();
                 match key {
-                    'q' => break,
+                    'q' => {
+                        timer.stop();
+                        break;
+                    }
                     's' => timer.start(),
                     'p' => timer.pause(),
                     ' ' => timer.toggle(),
@@ -119,14 +138,13 @@ fn main() {
             }
         }
 
-        let time = timer.print();
+        let time = timer.lock().unwrap().print();
         draw_timer(&time, &font);
-
-        timer.tick();
-        cache.save(timer.countdown());
     }
 
+    countdown_thread.join().unwrap();
     cache.clear();
+
     terminal::disable_raw_mode().unwrap();
     println!();
 }

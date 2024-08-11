@@ -5,6 +5,7 @@ use std::{
     path::PathBuf,
 };
 
+#[derive(Clone, Debug)]
 pub struct Cache {
     pub cache_file: PathBuf,
 }

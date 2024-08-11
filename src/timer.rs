@@ -1,5 +1,3 @@
-use std::{thread::sleep, time::Duration};
-
 pub struct Timer {
     hours: u64,
     minutes: u64,
@@ -28,6 +26,11 @@ impl Timer {
         self.paused = true;
     }
 
+    pub fn stop(&mut self) {
+        self.paused = true;
+        self.countdown = 0;
+    }
+
     #[allow(dead_code)]
     pub fn start(&mut self) {
         self.paused = false;
@@ -49,12 +52,19 @@ impl Timer {
 
     pub fn tick(&mut self) {
         if !self.paused {
-            sleep(Duration::from_secs(1));
             if self.countdown == 0 {
                 return;
             }
             self.countdown -= 1;
         }
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.countdown == 0
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused
     }
 
     pub fn time(&self) -> (u64, u64, u64) {
