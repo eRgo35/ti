@@ -1,6 +1,6 @@
 [package]
 name = "ti"
-version = "1.1.2"
+version = "1.2.0"
 authors = ["Michał Czyż <mike@c2yz.com>"]
 edition = "2021"
 
