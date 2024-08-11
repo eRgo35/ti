@@ -1,0 +1,158 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions: write-all
+
+jobs:
+  # Creates a release and outputs the url
+  create-release:
+    name: create-release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ env.RELEASE_UPLOAD_URL }}
+      version: ${{ env.VERSION }}
+    steps:
+      - name: Get the release version from the tag
+        shell: bash
+        if: env.VERSION == ''
+        run: |
+          echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          echo "version is: ${{ env.VERSION }}"
+      - name: Create GitHub release
+        uses: actions/github-script@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          script: |
+            try {
+              const response = await github.rest.repos.createRelease({
+                draft: false,
+                generate_release_notes: true,
+                name: process.env.VERSION,
+                owner: context.repo.owner,
+                prerelease: false,
+                repo: context.repo.repo,
+                tag_name: process.env.VERSION,
+              });
+
+              core.exportVariable('RELEASE_ID', response.data.id);
+              core.exportVariable('RELEASE_UPLOAD_URL', response.data.upload_url);
+            } catch (error) {
+              core.setFailed(error.message);
+            }
+
+  build-and-upload:
+    name: Build and upload
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        build: [linux, macos]
+        include:
+          - build: linux
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            use-cross: true
+
+          - build: linux
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            use-cross: true
+
+          - build: macos
+            os: macos-latest
+            target: x86_64-apple-darwin
+            use-cross: true
+
+          - build: windows-gnu
+            os: windows-latest
+            target: x86_64-pc-windows-gnu
+            use-cross: false
+
+          - build: windows-msvc
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            use-cross: false
+
+          - build: windows32-msvc
+            os: windows-latest
+            target: i686-pc-windows-msvc
+            use-cross: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          target: ${{ matrix.target }}
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: ${{ matrix.use-cross }}
+          command: build
+          args: --verbose --release --target ${{ matrix.target }}
+
+      - name: Strip release binary (linux and macos)
+        if: matrix.build == 'linux' || matrix.build == 'macos'
+        run: strip "target/${{ matrix.target }}/release/ti"
+
+      - name: Build archive
+        shell: bash
+        run: |
+          dirname="ti-${{ needs.create-release.outputs.version }}-${{ matrix.target }}"
+          mkdir "$dirname"
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            mv "target/${{ matrix.target }}/release/ti.exe" "$dirname"
+          else
+            mv "target/${{ matrix.target }}/release/ti" "$dirname"
+          fi
+          mv LICENSE.md "$dirname"
+
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            7z a "$dirname.zip" "$dirname"
+            echo "ASSET=$dirname.zip" >> $GITHUB_ENV
+          else
+            tar -czf "$dirname.tar.gz" "$dirname"
+            echo "ASSET=$dirname.tar.gz" >> $GITHUB_ENV
+          fi
+
+      - name: Upload archive
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ${{ env.ASSET }}
+          asset_name: ${{ env.ASSET }}
+          asset_content_type: application/octet-stream
+
+  # publish-cargo:
+  #   name: Publish to Cargo
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v3
+
+  #     - uses: actions-rs/toolchain@v1
+  #       with:
+  #         toolchain: stable
+  #         profile: minimal
+  #         override: true
+
+  #     - uses: actions-rs/cargo@v1
+  #       with:
+  #         command: publish
+  #         args: --allow-dirty
+  #       env:
+  #         CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_API_KEY }}

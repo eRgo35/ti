@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [senpai]
+  pull_request:
+    branches: [senpai]
+
+env:
+  RUST_BACKTRACE: 1
+  RUST_LOG: trace
+
+jobs:
+  test:
+    name: test
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Set up cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build projectable
+        run: cargo build --verbose
+
+      - name: Run tests
+        run: cargo test --verbose
