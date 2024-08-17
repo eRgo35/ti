@@ -9,13 +9,13 @@ use crossterm::{
     cursor::{Hide, MoveTo},
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
-    style::Print,
+    style::{Color, Print, SetForegroundColor},
     terminal::{self, Clear, ClearType},
     QueueableCommand,
 };
 use figlet_rs::FIGfont;
 
-use crate::timer::Timer;
+use crate::{cache::Cache, timer::Timer};
 
 const REFRESH_RATE: Duration = Duration::from_millis(100);
 const FONT_WIDTH: usize = 9;
@@ -40,8 +40,9 @@ fn handle_keyboard() -> Option<char> {
     None
 }
 
-fn draw_timer(time: &str, font: &FIGfont) {
-    let figure = font.convert(time).unwrap();
+fn draw_timer(timer: &Arc<Mutex<Timer>>, font: &FIGfont) {
+    let time = timer.lock().unwrap().print();
+    let figure = font.convert(&time).unwrap();
 
     // TODO: Calculate figure width and height properly
     let figure_width = (time.len() * FONT_WIDTH) as u16;
@@ -62,21 +63,45 @@ fn draw_timer(time: &str, font: &FIGfont) {
 
     stdout.queue(Clear(ClearType::All)).unwrap();
 
+    if timer.lock().unwrap().is_paused() {
+        execute!(stdout, SetForegroundColor(Color::DarkGrey)).unwrap();
+    }
+
     for (i, line) in figure.to_string().lines().enumerate() {
         stdout.queue(MoveTo(x, y + i as u16)).unwrap();
         stdout.queue(Print(line)).unwrap();
     }
 
+    execute!(stdout, SetForegroundColor(Color::Reset)).unwrap();
+
     stdout.queue(MoveTo(0, terminal_height)).unwrap();
 
-    stdout
-        .queue(Print("SPACE [Pause/Resume] | R [Reset] | Q [Quit]"))
+    if timer.lock().unwrap().is_paused() {
+        execute!(
+            stdout,
+            SetForegroundColor(Color::DarkGrey),
+            Print("TIMER PAUSED"),
+            SetForegroundColor(Color::Reset),
+            Print(" | SPACE [Resume] | R [Reset] | Q [Quit]",)
+        )
         .unwrap();
+    } else if timer.lock().unwrap().is_finished() {
+        execute!(
+            stdout,
+            SetForegroundColor(Color::Red),
+            Print("TIMER FINISHED"),
+            SetForegroundColor(Color::Reset),
+            Print(" | R [Reset] | Q [Quit]"),
+        )
+        .unwrap();
+    } else {
+        execute!(stdout, Print("SPACE [Pause] | R [Reset] | Q [Quit]")).unwrap();
+    }
 
     stdout.flush().unwrap();
 }
 
-pub fn handle_interface(timer: Arc<Mutex<Timer>>, font: FIGfont) {
+pub fn handle_interface(timer: Arc<Mutex<Timer>>, cache: Arc<Mutex<Cache>>, font: FIGfont) {
     terminal::enable_raw_mode().unwrap();
 
     loop {
@@ -91,14 +116,16 @@ pub fn handle_interface(timer: Arc<Mutex<Timer>>, font: FIGfont) {
                     's' => timer.start(),
                     'p' => timer.pause(),
                     ' ' => timer.toggle(),
-                    'r' => timer.reset(),
+                    'r' => {
+                        timer.reset();
+                        cache.lock().unwrap().clear();
+                    }
                     _ => {}
                 }
             }
         }
 
-        let time = timer.lock().unwrap().print();
-        draw_timer(&time, &font);
+        draw_timer(&timer, &font);
     }
 
     terminal::disable_raw_mode().unwrap();

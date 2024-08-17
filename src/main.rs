@@ -31,29 +31,35 @@ fn main() {
         seconds = parts.next().unwrap_or(0);
     }
 
-    let cache = Cache::new(args.cache);
+    let cache = Arc::new(Mutex::new(Cache::new(args.cache)));
     let font = load_font(args.font);
-    let timer = Arc::new(Mutex::new(
+    let timer = Arc::new(Mutex::new(if args.clear {
+        Timer::new(hours, minutes, seconds)
+    } else {
         cache
+            .lock()
+            .unwrap()
             .load()
-            .map(Timer::from_cache)
-            .unwrap_or_else(|| Timer::new(hours, minutes, seconds)),
-    ));
+            .map(|cached_countdown| Timer::from_cache(cached_countdown, hours, minutes, seconds))
+            .unwrap_or_else(|| Timer::new(hours, minutes, seconds))
+    }));
 
+    // TODO: Synchronize timer reset calls with the countdown thread
     let timer_clone = Arc::clone(&timer);
-    let cache_clone = cache.clone();
+    let cache_clone = Arc::clone(&cache);
     let countdown_thread = thread::spawn(move || loop {
         thread::sleep(Duration::from_secs(1));
         let mut timer = timer_clone.lock().unwrap();
-        timer.tick();
-        cache_clone.save(timer.countdown());
-        if timer.is_finished() {
+
+        if timer.is_finished() || timer.is_stopped() {
             break;
         }
+
+        timer.tick();
+        cache_clone.lock().unwrap().save(timer.countdown());
     });
 
-    handle_interface(timer, font);
+    handle_interface(timer, cache, font);
 
     countdown_thread.join().unwrap();
-    cache.clear();
 }

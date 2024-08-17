@@ -40,5 +40,8 @@ pub struct Args {
     #[arg(long, default_value_t = String::from(""), help = "Path to cache file")]
     pub cache: String,
 
+    #[arg(long, default_value_t = false, help = "Clear cache")]
+    pub clear: bool,
+
     pub time: Option<String>,
 }

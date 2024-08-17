@@ -3,7 +3,9 @@ pub struct Timer {
     minutes: u64,
     seconds: u64,
     countdown: u64,
+    original_countdown: u64,
     paused: bool,
+    stopped: bool,
 }
 
 impl Timer {
@@ -13,13 +15,33 @@ impl Timer {
             minutes,
             seconds,
             countdown: Self::time_to_countdown(hours, minutes, seconds),
+            original_countdown: Self::time_to_countdown(hours, minutes, seconds),
             paused: false,
+            stopped: false,
         }
     }
 
-    pub fn from_cache(cached_countdown: u64) -> Self {
+    pub fn from_cache(
+        cached_countdown: u64,
+        args_hours: u64,
+        args_minutes: u64,
+        args_seconds: u64,
+    ) -> Self {
+        if cached_countdown == 0 {
+            return Self::new(args_hours, args_minutes, args_seconds);
+        }
+
         let (hours, minutes, seconds) = Self::countdown_to_time(cached_countdown);
-        Self::new(hours, minutes, seconds)
+
+        Self {
+            hours,
+            minutes,
+            seconds,
+            countdown: cached_countdown,
+            original_countdown: Self::time_to_countdown(args_hours, args_minutes, args_seconds),
+            paused: false,
+            stopped: false,
+        }
     }
 
     pub fn pause(&mut self) {
@@ -27,8 +49,8 @@ impl Timer {
     }
 
     pub fn stop(&mut self) {
-        self.paused = true;
-        self.countdown = 0;
+        self.stopped = true;
+        // self.countdown = 0;
     }
 
     pub fn start(&mut self) {
@@ -41,12 +63,15 @@ impl Timer {
     }
 
     pub fn toggle(&mut self) {
+        if self.countdown == 0 {
+            return;
+        }
+
         self.paused = !self.paused;
     }
 
-    // TODO: Preserve the original time when resetting aka cache overwrite
     pub fn reset(&mut self) {
-        self.countdown = Self::time_to_countdown(self.hours, self.minutes, self.seconds);
+        self.countdown = self.original_countdown;
     }
 
     pub fn tick(&mut self) {
@@ -60,6 +85,10 @@ impl Timer {
 
     pub fn is_finished(&self) -> bool {
         self.countdown == 0
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.stopped
     }
 
     #[allow(dead_code)]
