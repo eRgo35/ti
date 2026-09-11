@@ -1,5 +1,8 @@
 # ti
 
+[![crates.io](https://img.shields.io/crates/v/ti.svg)](https://crates.io/crates/ti)
+
+
 A simple terminal timer
 
 ## Installation
@@ -42,6 +45,13 @@ Install package
 $ makepkg -si
 ```
 
+## Crates.io
+
+```sh
+$ cargo install ti
+```
+
+
 ## Usage
 
 ```
@@ -59,3 +69,7 @@ Options:
   -h, --help               Print help
   -V, --version            Print version
 ```
+
+## License
+
+MIT — see [LICENSE.md](LICENSE.md)
