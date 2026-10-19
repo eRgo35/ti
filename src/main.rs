@@ -9,11 +9,7 @@ use cache::Cache;
 use clap::{error::ErrorKind, CommandFactory, Parser};
 use font::load_font;
 use interface::handle_interface;
-use std::{
-    sync::{Arc, Mutex},
-    thread,
-    time::Duration,
-};
+use std::time::Instant;
 use timer::{time_to_countdown, Timer};
 
 fn main() {
@@ -23,41 +19,23 @@ fn main() {
         .time
         .unwrap_or((args.hours, args.minutes, args.seconds));
 
-    if time_to_countdown(hours, minutes, seconds).is_none() {
+    let Some(original) = time_to_countdown(hours, minutes, seconds) else {
         Args::command()
             .error(ErrorKind::ValueValidation, "the total time is too large")
             .exit();
-    }
+    };
 
-    let cache = Arc::new(Mutex::new(Cache::new(args.cache)));
+    let cache = Cache::new(args.cache);
     let font = load_font(args.font);
-    let timer = Arc::new(Mutex::new(if args.clear {
-        Timer::new(hours, minutes, seconds)
+    let now = Instant::now();
+    let timer = if args.clear {
+        Timer::new(original, now)
     } else {
         cache
-            .lock()
-            .unwrap()
             .load()
-            .map(|cached_countdown| Timer::from_cache(cached_countdown, hours, minutes, seconds))
-            .unwrap_or_else(|| Timer::new(hours, minutes, seconds))
-    }));
+            .map(|cached| Timer::from_cache(cached, original, now))
+            .unwrap_or_else(|| Timer::new(original, now))
+    };
 
-    // TODO: Synchronize timer reset calls with the countdown thread
-    let timer_clone = Arc::clone(&timer);
-    let cache_clone = Arc::clone(&cache);
-    let countdown_thread = thread::spawn(move || loop {
-        thread::sleep(Duration::from_secs(1));
-        let mut timer = timer_clone.lock().unwrap();
-
-        if timer.is_finished() || timer.is_stopped() {
-            break;
-        }
-
-        timer.tick();
-        cache_clone.lock().unwrap().save(timer.countdown());
-    });
-
-    handle_interface(timer, cache, font);
-
-    countdown_thread.join().unwrap();
+    handle_interface(timer, &cache, font);
 }

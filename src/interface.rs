@@ -1,8 +1,7 @@
 use std::{
     io::{stdout, Write},
     process::exit,
-    sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crossterm::{
@@ -17,31 +16,31 @@ use figlet_rs::FIGfont;
 
 use crate::{cache::Cache, timer::Timer};
 
-const REFRESH_RATE: Duration = Duration::from_millis(100);
+/// Upper bound on how long the loop sleeps when nothing is due, so the UI
+/// stays responsive even while the timer is paused or finished.
+const IDLE_POLL: Duration = Duration::from_millis(250);
 const FONT_WIDTH: usize = 9;
 
-fn handle_exit(code: i32) {
+fn handle_exit(code: i32) -> ! {
     terminal::disable_raw_mode().unwrap();
     println!();
     exit(code);
 }
 
-fn handle_keyboard() -> Option<char> {
-    if let Ok(Event::Key(KeyEvent {
+fn handle_keyboard(
+    KeyEvent {
         code, modifiers, ..
-    })) = event::read()
-    {
-        match (code, modifiers) {
-            (KeyCode::Char('c'), KeyModifiers::CONTROL) => handle_exit(1),
-            (KeyCode::Char(c), _) => return Some(c.to_ascii_lowercase()),
-            _ => {}
-        }
+    }: KeyEvent,
+) -> Option<char> {
+    match (code, modifiers) {
+        (KeyCode::Char('c'), KeyModifiers::CONTROL) => handle_exit(1),
+        (KeyCode::Char(c), _) => Some(c.to_ascii_lowercase()),
+        _ => None,
     }
-    None
 }
 
-fn draw_timer(timer: &Arc<Mutex<Timer>>, font: &FIGfont) {
-    let time = timer.lock().unwrap().print();
+fn draw_timer(timer: &Timer, font: &FIGfont) {
+    let time = timer.print();
     let figure = font.convert(&time).unwrap();
 
     // TODO: Calculate figure width and height properly
@@ -63,7 +62,7 @@ fn draw_timer(timer: &Arc<Mutex<Timer>>, font: &FIGfont) {
 
     stdout.queue(Clear(ClearType::All)).unwrap();
 
-    if timer.lock().unwrap().is_paused() {
+    if timer.is_paused() {
         execute!(stdout, SetForegroundColor(Color::DarkGrey)).unwrap();
     }
 
@@ -76,7 +75,7 @@ fn draw_timer(timer: &Arc<Mutex<Timer>>, font: &FIGfont) {
 
     stdout.queue(MoveTo(0, terminal_height)).unwrap();
 
-    if timer.lock().unwrap().is_paused() {
+    if timer.is_paused() {
         execute!(
             stdout,
             SetForegroundColor(Color::DarkGrey),
@@ -85,7 +84,7 @@ fn draw_timer(timer: &Arc<Mutex<Timer>>, font: &FIGfont) {
             Print(" | SPACE [Resume] | R [Reset] | Q [Quit]",)
         )
         .unwrap();
-    } else if timer.lock().unwrap().is_finished() {
+    } else if timer.is_finished() {
         execute!(
             stdout,
             SetForegroundColor(Color::Red),
@@ -101,31 +100,51 @@ fn draw_timer(timer: &Arc<Mutex<Timer>>, font: &FIGfont) {
     stdout.flush().unwrap();
 }
 
-pub fn handle_interface(timer: Arc<Mutex<Timer>>, cache: Arc<Mutex<Cache>>, font: FIGfont) {
+pub fn handle_interface(mut timer: Timer, cache: &Cache, font: FIGfont) {
     terminal::enable_raw_mode().unwrap();
 
+    let mut dirty = true;
+
     loop {
-        if event::poll(REFRESH_RATE).unwrap() {
-            if let Some(key) = handle_keyboard() {
-                let mut timer = timer.lock().unwrap();
-                match key {
-                    'q' => {
-                        timer.stop();
-                        break;
-                    }
-                    's' => timer.start(),
-                    'p' => timer.pause(),
-                    ' ' => timer.toggle(),
-                    'r' => {
-                        timer.reset();
-                        cache.lock().unwrap().clear();
-                    }
-                    _ => {}
-                }
-            }
+        let now = Instant::now();
+
+        if timer.tick(now) {
+            cache.save(timer.countdown());
+            dirty = true;
         }
 
-        draw_timer(&timer, &font);
+        if dirty {
+            draw_timer(&timer, &font);
+            dirty = false;
+        }
+
+        let timeout = timer
+            .until_next_tick(now)
+            .map_or(IDLE_POLL, |d| d.min(IDLE_POLL));
+
+        if event::poll(timeout).unwrap() {
+            let now = Instant::now();
+            match event::read().unwrap() {
+                Event::Resize(..) => dirty = true,
+                Event::Key(event) => {
+                    if let Some(key) = handle_keyboard(event) {
+                        match key {
+                            'q' => break,
+                            's' => timer.start(now),
+                            'p' => timer.pause(now),
+                            ' ' => timer.toggle(now),
+                            'r' => {
+                                timer.reset(now);
+                                cache.clear();
+                            }
+                            _ => {}
+                        }
+                        dirty = true;
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     terminal::disable_raw_mode().unwrap();
