@@ -9,7 +9,7 @@ use cache::Cache;
 use clap::{error::ErrorKind, CommandFactory, Parser};
 use font::load_font;
 use interface::handle_interface;
-use std::time::Instant;
+use std::{process, time::Instant};
 use timer::{time_to_countdown, Timer};
 
 fn main() {
@@ -26,7 +26,10 @@ fn main() {
     };
 
     let cache = Cache::new(args.cache);
-    let font = load_font(args.font);
+    let font = load_font(&args.font).unwrap_or_else(|err| {
+        eprintln!("error: {err}");
+        process::exit(1);
+    });
     let now = Instant::now();
     let timer = if args.clear {
         Timer::new(original, now)
