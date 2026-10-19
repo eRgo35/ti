@@ -6,60 +6,56 @@ mod timer;
 
 use args::Args;
 use cache::Cache;
-use clap::Parser;
+use clap::{error::ErrorKind, CommandFactory, Parser};
 use font::load_font;
-use interface::handle_interface;
+use interface::{handle_interface, Outcome};
 use std::{
-    sync::{Arc, Mutex},
-    thread,
-    time::Duration,
+    process::{self, ExitCode},
+    time::Instant,
 };
-use timer::Timer;
+use timer::{time_to_countdown, Timer};
 
-fn main() {
+fn main() -> ExitCode {
     let args = Args::parse();
 
-    let mut hours = args.hours;
-    let mut minutes = args.minutes;
-    let mut seconds = args.seconds;
+    let (hours, minutes, seconds) = args
+        .time
+        .unwrap_or((args.hours, args.minutes, args.seconds));
 
-    if args.time.is_some() {
-        let time = args.time.unwrap();
-        let mut parts = time.split(':').map(|part| part.parse::<u64>().unwrap());
-        hours = parts.next().unwrap_or(0);
-        minutes = parts.next().unwrap_or(0);
-        seconds = parts.next().unwrap_or(0);
-    }
+    let Some(original) = time_to_countdown(hours, minutes, seconds) else {
+        Args::command()
+            .error(ErrorKind::ValueValidation, "the total time is too large")
+            .exit();
+    };
 
-    let cache = Arc::new(Mutex::new(Cache::new(args.cache)));
-    let font = load_font(args.font);
-    let timer = Arc::new(Mutex::new(if args.clear {
-        Timer::new(hours, minutes, seconds)
+    let cache = Cache::new(args.cache);
+    let font = load_font(&args.font).unwrap_or_else(|err| {
+        eprintln!("error: {err}");
+        process::exit(1);
+    });
+    let now = Instant::now();
+    let timer = if args.clear {
+        Timer::new(original, now)
     } else {
         cache
-            .lock()
-            .unwrap()
             .load()
-            .map(|cached_countdown| Timer::from_cache(cached_countdown, hours, minutes, seconds))
-            .unwrap_or_else(|| Timer::new(hours, minutes, seconds))
-    }));
+            .map(|cached| Timer::from_cache(cached, original, now))
+            .unwrap_or_else(|| Timer::new(original, now))
+    };
 
-    // TODO: Synchronize timer reset calls with the countdown thread
-    let timer_clone = Arc::clone(&timer);
-    let cache_clone = Arc::clone(&cache);
-    let countdown_thread = thread::spawn(move || loop {
-        thread::sleep(Duration::from_secs(1));
-        let mut timer = timer_clone.lock().unwrap();
-
-        if timer.is_finished() || timer.is_stopped() {
-            break;
+    // The terminal is restored by the time handle_interface returns.
+    match handle_interface(timer, &cache, font) {
+        Ok(Outcome::Quit) => {
+            println!("\nQuitting...");
+            ExitCode::SUCCESS
         }
-
-        timer.tick();
-        cache_clone.lock().unwrap().save(timer.countdown());
-    });
-
-    handle_interface(timer, cache, font);
-
-    countdown_thread.join().unwrap();
+        Ok(Outcome::Interrupted) => {
+            println!();
+            ExitCode::FAILURE
+        }
+        Err(err) => {
+            eprintln!("error: {err}");
+            ExitCode::FAILURE
+        }
+    }
 }
