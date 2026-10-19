@@ -1,15 +1,15 @@
 use std::{
-    io::{stdout, Write},
-    process::exit,
+    io::{self, stdout, Write},
+    panic,
     time::{Duration, Instant},
 };
 
 use crossterm::{
-    cursor::{Hide, MoveTo},
+    cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
-    style::{Color, Print, SetForegroundColor},
+    queue,
+    style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{self, Clear, ClearType},
-    QueueableCommand,
 };
 use figlet_rs::FIGfont;
 
@@ -19,20 +19,62 @@ use crate::{cache::Cache, timer::Timer};
 /// stays responsive even while the timer is paused or finished.
 const IDLE_POLL: Duration = Duration::from_millis(250);
 
-fn handle_exit(code: i32) -> ! {
-    terminal::disable_raw_mode().unwrap();
-    println!();
-    exit(code);
+/// How the interface ended.
+pub enum Outcome {
+    Quit,
+    Interrupted,
+}
+
+enum Input {
+    Interrupt,
+    Char(char),
+}
+
+/// Puts the terminal into raw mode with a hidden cursor and restores it when
+/// dropped, on every exit path including errors and panics.
+struct TerminalGuard;
+
+impl TerminalGuard {
+    fn new() -> io::Result<Self> {
+        terminal::enable_raw_mode()?;
+        let guard = Self;
+        queue!(stdout(), Hide)?;
+        stdout().flush()?;
+
+        // Restore first so the panic message is not printed in raw mode.
+        let previous = panic::take_hook();
+        panic::set_hook(Box::new(move |info| {
+            restore_terminal();
+            previous(info);
+        }));
+
+        Ok(guard)
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        restore_terminal();
+    }
+}
+
+/// Best effort and idempotent: there is nothing useful to do if the terminal
+/// refuses to be restored.
+fn restore_terminal() {
+    let mut out = stdout();
+    let _ = queue!(out, ResetColor, Show);
+    let _ = out.flush();
+    let _ = terminal::disable_raw_mode();
 }
 
 fn handle_keyboard(
     KeyEvent {
         code, modifiers, ..
     }: KeyEvent,
-) -> Option<char> {
+) -> Option<Input> {
     match (code, modifiers) {
-        (KeyCode::Char('c'), KeyModifiers::CONTROL) => handle_exit(1),
-        (KeyCode::Char(c), _) => Some(c.to_ascii_lowercase()),
+        (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(Input::Interrupt),
+        (KeyCode::Char(c), _) => Some(Input::Char(c.to_ascii_lowercase())),
         _ => None,
     }
 }
@@ -95,47 +137,44 @@ fn clip(text: &str, max: usize) -> &str {
     }
 }
 
-fn draw_timer(timer: &Timer, font: &FIGfont) {
+fn draw_timer(out: &mut impl Write, timer: &Timer, font: &FIGfont) -> io::Result<()> {
     let lines = render_lines(font, &timer.print());
-    let (width, height) = terminal::size().unwrap();
+    let (width, height) = terminal::size()?;
     let (x, y) = centered_origin(&lines, width, height);
     let status_row = height.saturating_sub(1);
 
-    let mut stdout = stdout();
-
-    stdout.queue(Hide).unwrap();
-    stdout.queue(Clear(ClearType::All)).unwrap();
+    queue!(out, Clear(ClearType::All))?;
 
     if timer.is_paused() {
-        stdout.queue(SetForegroundColor(Color::DarkGrey)).unwrap();
+        queue!(out, SetForegroundColor(Color::DarkGrey))?;
     }
 
     // Keep the figure inside the terminal and off the status row so a small
     // window never wraps or scrolls.
     for (row, line) in (y..status_row).zip(&lines) {
-        stdout.queue(MoveTo(x, row)).unwrap();
-        stdout
-            .queue(Print(clip(line, usize::from(width - x))))
-            .unwrap();
+        queue!(
+            out,
+            MoveTo(x, row),
+            Print(clip(line, usize::from(width - x)))
+        )?;
     }
 
-    stdout.queue(SetForegroundColor(Color::Reset)).unwrap();
-    stdout.queue(MoveTo(0, status_row)).unwrap();
+    queue!(out, SetForegroundColor(Color::Reset), MoveTo(0, status_row))?;
 
     let mut remaining = usize::from(width);
     for (color, text) in status_segments(timer) {
         let text = clip(text, remaining);
         remaining -= text.chars().count();
-        stdout.queue(SetForegroundColor(color)).unwrap();
-        stdout.queue(Print(text)).unwrap();
+        queue!(out, SetForegroundColor(color), Print(text))?;
     }
-    stdout.queue(SetForegroundColor(Color::Reset)).unwrap();
+    queue!(out, SetForegroundColor(Color::Reset))?;
 
-    stdout.flush().unwrap();
+    out.flush()
 }
 
-pub fn handle_interface(mut timer: Timer, cache: &Cache, font: FIGfont) {
-    terminal::enable_raw_mode().unwrap();
+pub fn handle_interface(mut timer: Timer, cache: &Cache, font: FIGfont) -> io::Result<Outcome> {
+    let _guard = TerminalGuard::new()?;
+    let mut out = stdout();
 
     let mut dirty = true;
 
@@ -148,7 +187,7 @@ pub fn handle_interface(mut timer: Timer, cache: &Cache, font: FIGfont) {
         }
 
         if dirty {
-            draw_timer(&timer, &font);
+            draw_timer(&mut out, &timer, &font)?;
             dirty = false;
         }
 
@@ -156,33 +195,34 @@ pub fn handle_interface(mut timer: Timer, cache: &Cache, font: FIGfont) {
             .until_next_tick(now)
             .map_or(IDLE_POLL, |d| d.min(IDLE_POLL));
 
-        if event::poll(timeout).unwrap() {
-            let now = Instant::now();
-            match event::read().unwrap() {
-                Event::Resize(..) => dirty = true,
-                Event::Key(event) => {
-                    if let Some(key) = handle_keyboard(event) {
-                        match key {
-                            'q' => break,
-                            's' => timer.start(now),
-                            'p' => timer.pause(now),
-                            ' ' => timer.toggle(now),
-                            'r' => {
-                                timer.reset(now);
-                                cache.clear();
-                            }
-                            _ => {}
+        if !event::poll(timeout)? {
+            continue;
+        }
+
+        let now = Instant::now();
+        match event::read()? {
+            Event::Resize(..) => dirty = true,
+            Event::Key(event) => match handle_keyboard(event) {
+                Some(Input::Interrupt) => return Ok(Outcome::Interrupted),
+                Some(Input::Char(key)) => {
+                    match key {
+                        'q' => return Ok(Outcome::Quit),
+                        's' => timer.start(now),
+                        'p' => timer.pause(now),
+                        ' ' => timer.toggle(now),
+                        'r' => {
+                            timer.reset(now);
+                            cache.clear();
                         }
-                        dirty = true;
+                        _ => {}
                     }
+                    dirty = true;
                 }
-                _ => {}
-            }
+                None => {}
+            },
+            _ => {}
         }
     }
-
-    terminal::disable_raw_mode().unwrap();
-    println!("\nQuitting...");
 }
 
 #[cfg(test)]
