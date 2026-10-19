@@ -6,7 +6,7 @@ mod timer;
 
 use args::Args;
 use cache::Cache;
-use clap::Parser;
+use clap::{error::ErrorKind, CommandFactory, Parser};
 use font::load_font;
 use interface::handle_interface;
 use std::{
@@ -14,21 +14,19 @@ use std::{
     thread,
     time::Duration,
 };
-use timer::Timer;
+use timer::{time_to_countdown, Timer};
 
 fn main() {
     let args = Args::parse();
 
-    let mut hours = args.hours;
-    let mut minutes = args.minutes;
-    let mut seconds = args.seconds;
+    let (hours, minutes, seconds) = args
+        .time
+        .unwrap_or((args.hours, args.minutes, args.seconds));
 
-    if args.time.is_some() {
-        let time = args.time.unwrap();
-        let mut parts = time.split(':').map(|part| part.parse::<u64>().unwrap());
-        hours = parts.next().unwrap_or(0);
-        minutes = parts.next().unwrap_or(0);
-        seconds = parts.next().unwrap_or(0);
+    if time_to_countdown(hours, minutes, seconds).is_none() {
+        Args::command()
+            .error(ErrorKind::ValueValidation, "the total time is too large")
+            .exit();
     }
 
     let cache = Arc::new(Mutex::new(Cache::new(args.cache)));

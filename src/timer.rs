@@ -1,3 +1,11 @@
+/// Converts hours, minutes and seconds to total seconds, or `None` on overflow.
+pub fn time_to_countdown(hours: u64, minutes: u64, seconds: u64) -> Option<u64> {
+    hours
+        .checked_mul(3600)?
+        .checked_add(minutes.checked_mul(60)?)?
+        .checked_add(seconds)
+}
+
 pub struct Timer {
     hours: u64,
     minutes: u64,
