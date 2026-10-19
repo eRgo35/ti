@@ -29,7 +29,7 @@ A simple terminal timer
 Usage: ti [OPTIONS] [TIME]
 
 Arguments:
-  [TIME]  
+  [TIME]  Time as H, H:M or H:M:S (overrides -H/-M/-S)
 
 Options:
   -H, --hours <HOURS>      Hours [default: 0]
@@ -62,6 +62,8 @@ ti 90         # 90 hours
 
 When `TIME` is given, it replaces the `-H`/`-M`/`-S` flags entirely. Parts that `TIME` omits are 0, so `ti 1:30 -M 5` counts down from 1 hour 30 minutes.
 
+An invalid `TIME` (non-numeric, more than three components, or too large) is rejected with a usage error and exit code 2.
+
 ### Key bindings
 
 | Key      | Action                                 |
@@ -87,7 +89,7 @@ While the timer runs, the remaining time in seconds is saved every second to `ti
 
 ### Font
 
-`--font <path>` loads a FIGlet font file (`.flf`) to draw the digits. The default is the bundled ANSI Mono font.
+`--font <path>` loads a FIGlet font file (`.flf`) to draw the digits. The default is the bundled ANSI Mono font. An unreadable or invalid font file is an error with exit code 1; `ti` does not fall back to the default font.
 
 ## License
 
