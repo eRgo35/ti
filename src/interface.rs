@@ -6,7 +6,7 @@ use std::{
 
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     queue,
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{self, Clear, ClearType},
@@ -67,11 +67,21 @@ fn restore_terminal() {
     let _ = terminal::disable_raw_mode();
 }
 
+/// Maps a key event to an input. Only presses count: Windows (and terminals
+/// using the kitty keyboard protocol) also report repeats and releases, which
+/// would otherwise trigger every action twice.
 fn handle_keyboard(
     KeyEvent {
-        code, modifiers, ..
+        code,
+        modifiers,
+        kind,
+        ..
     }: KeyEvent,
 ) -> Option<Input> {
+    if kind != KeyEventKind::Press {
+        return None;
+    }
+
     match (code, modifiers) {
         (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(Input::Interrupt),
         (KeyCode::Char(c), _) => Some(Input::Char(c.to_ascii_lowercase())),
@@ -265,6 +275,40 @@ mod tests {
     fn render_default_font_is_multi_line() {
         let font = crate::font::load_font("").unwrap();
         assert!(render_lines(&font, "00:00:00").len() > 1);
+    }
+
+    fn key(code: KeyCode, modifiers: KeyModifiers, kind: KeyEventKind) -> KeyEvent {
+        KeyEvent::new_with_kind(code, modifiers, kind)
+    }
+
+    #[test]
+    fn key_press_is_handled() {
+        let press = key(KeyCode::Char(' '), KeyModifiers::NONE, KeyEventKind::Press);
+        assert!(matches!(handle_keyboard(press), Some(Input::Char(' '))));
+        let upper = key(KeyCode::Char('Q'), KeyModifiers::SHIFT, KeyEventKind::Press);
+        assert!(matches!(handle_keyboard(upper), Some(Input::Char('q'))));
+        let ctrl_c = key(
+            KeyCode::Char('c'),
+            KeyModifiers::CONTROL,
+            KeyEventKind::Press,
+        );
+        assert!(matches!(handle_keyboard(ctrl_c), Some(Input::Interrupt)));
+    }
+
+    #[test]
+    fn key_release_and_repeat_are_ignored() {
+        for kind in [KeyEventKind::Release, KeyEventKind::Repeat] {
+            assert!(handle_keyboard(key(KeyCode::Char(' '), KeyModifiers::NONE, kind)).is_none());
+            assert!(
+                handle_keyboard(key(KeyCode::Char('c'), KeyModifiers::CONTROL, kind)).is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn non_char_keys_are_ignored() {
+        let enter = key(KeyCode::Enter, KeyModifiers::NONE, KeyEventKind::Press);
+        assert!(handle_keyboard(enter).is_none());
     }
 
     #[test]
