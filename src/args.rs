@@ -1,6 +1,10 @@
-use clap::Parser;
+use std::ffi::OsString;
 
-use crate::timer::time_to_countdown;
+use clap::{
+    error::ErrorKind, parser::ValueSource, CommandFactory, FromArgMatches, Parser, Subcommand,
+};
+
+use crate::{pomodoro::Config, timer::time_to_countdown};
 
 const NAME: Option<&str> = option_env!("CARGO_PKG_NAME");
 const VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
@@ -36,13 +40,13 @@ pub struct Args {
     )]
     pub seconds: u64,
 
-    #[arg(long, default_value_t = String::from(""), help = "Path to custom font file")]
+    #[arg(long, global = true, default_value_t = String::from(""), hide_default_value = true, help = "Path to custom font file")]
     pub font: String,
 
-    #[arg(long, default_value_t = String::from(""), help = "Path to cache file")]
+    #[arg(long, global = true, default_value_t = String::from(""), hide_default_value = true, help = "Path to cache file")]
     pub cache: String,
 
-    #[arg(long, default_value_t = false, help = "Clear cache")]
+    #[arg(long, global = true, default_value_t = false, help = "Clear cache")]
     pub clear: bool,
 
     #[arg(
@@ -51,6 +55,75 @@ pub struct Args {
         help = "Time as H, H:M or H:M:S (overrides -H/-M/-S)"
     )]
     pub time: Option<(u64, u64, u64)>,
+
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Pomodoro timer: work sessions and breaks in a loop
+    Pomodoro(PomodoroArgs),
+}
+
+impl Args {
+    /// Parses `args` (including the program name). Countdown options cannot
+    /// be combined with a subcommand, which would otherwise ignore them.
+    pub fn try_parse_args<I, T>(args: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
+        let mut command = Self::command();
+        let matches = command.try_get_matches_from_mut(args)?;
+        let parsed = Self::from_arg_matches(&matches)?;
+
+        if parsed.command.is_some() {
+            for id in ["hours", "minutes", "seconds", "time"] {
+                if matches.value_source(id) == Some(ValueSource::CommandLine) {
+                    let arg = command
+                        .get_arguments()
+                        .find(|arg| arg.get_id() == id)
+                        .map_or_else(|| id.to_owned(), ToString::to_string);
+                    return Err(command.error(
+                        ErrorKind::ArgumentConflict,
+                        format!("'{arg}' cannot be used with a subcommand"),
+                    ));
+                }
+            }
+        }
+
+        Ok(parsed)
+    }
+}
+
+/// Largest number of minutes that still fits in seconds.
+const MAX_MINUTES: u64 = u64::MAX / 60;
+
+#[derive(clap::Args, Debug)]
+pub struct PomodoroArgs {
+    #[arg(long, value_name = "MINUTES", default_value_t = 25, value_parser = clap::value_parser!(u64).range(1..=MAX_MINUTES), help = "Work session length")]
+    pub work: u64,
+
+    #[arg(long = "break", value_name = "MINUTES", default_value_t = 5, value_parser = clap::value_parser!(u64).range(1..=MAX_MINUTES), help = "Short break length")]
+    pub short_break: u64,
+
+    #[arg(long, value_name = "MINUTES", default_value_t = 15, value_parser = clap::value_parser!(u64).range(1..=MAX_MINUTES), help = "Long break length")]
+    pub long_break: u64,
+
+    #[arg(long, default_value_t = 4, value_parser = clap::value_parser!(u64).range(1..), help = "Work sessions before a long break")]
+    pub rounds: u64,
+}
+
+impl PomodoroArgs {
+    pub fn config(&self) -> Config {
+        Config {
+            work: self.work * 60,
+            short_break: self.short_break * 60,
+            long_break: self.long_break * 60,
+            rounds: self.rounds,
+        }
+    }
 }
 
 /// Parses `H`, `H:M` or `H:M:S` into `(hours, minutes, seconds)`. Components
@@ -118,6 +191,107 @@ mod tests {
     fn rejects_too_many_components() {
         assert!(parse_time("1:2:3:4").is_err());
         assert!(parse_time("1:2:3:").is_err());
+    }
+
+    fn parse(args: &[&str]) -> Result<Args, clap::Error> {
+        Args::try_parse_args(std::iter::once("ti").chain(args.iter().copied()))
+    }
+
+    fn pomodoro_config(args: &[&str]) -> Config {
+        match parse(args).unwrap().command {
+            Some(Command::Pomodoro(p)) => p.config(),
+            None => panic!("{args:?} is not a pomodoro command"),
+        }
+    }
+
+    #[test]
+    fn countdown_flags_and_time() {
+        let args = parse(&["-H", "1", "-m", "2", "-S", "3"]).unwrap();
+        assert_eq!((args.hours, args.minutes, args.seconds), (1, 2, 3));
+        assert!(args.command.is_none());
+        assert_eq!(parse(&["1:30"]).unwrap().time, Some((1, 30, 0)));
+        assert_eq!(parse(&["-s", "9"]).unwrap().seconds, 9);
+    }
+
+    #[test]
+    fn pomodoro_defaults_are_classic() {
+        assert_eq!(
+            pomodoro_config(&["pomodoro"]),
+            Config {
+                work: 25 * 60,
+                short_break: 5 * 60,
+                long_break: 15 * 60,
+                rounds: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn pomodoro_overrides() {
+        assert_eq!(
+            pomodoro_config(&[
+                "pomodoro",
+                "--work",
+                "50",
+                "--break",
+                "10",
+                "--long-break",
+                "30",
+                "--rounds",
+                "2"
+            ]),
+            Config {
+                work: 50 * 60,
+                short_break: 10 * 60,
+                long_break: 30 * 60,
+                rounds: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn pomodoro_accepts_shared_options_before_or_after() {
+        for args in [
+            &["--font", "f.flf", "--cache", "c", "--clear", "pomodoro"][..],
+            &["pomodoro", "--font", "f.flf", "--cache", "c", "--clear"][..],
+        ] {
+            let args = parse(args).unwrap();
+            assert_eq!(
+                (args.font.as_str(), args.cache.as_str(), args.clear),
+                ("f.flf", "c", true)
+            );
+            assert!(args.command.is_some());
+        }
+    }
+
+    #[test]
+    fn pomodoro_rejects_zero_and_overflowing_lengths() {
+        for flag in ["--work", "--break", "--long-break", "--rounds"] {
+            let err = parse(&["pomodoro", flag, "0"]).unwrap_err();
+            assert_eq!(err.kind(), ErrorKind::ValueValidation, "{flag}");
+        }
+        let too_big = (MAX_MINUTES + 1).to_string();
+        assert!(parse(&["pomodoro", "--work", &too_big]).is_err());
+        let max = MAX_MINUTES.to_string();
+        assert_eq!(
+            pomodoro_config(&["pomodoro", "--work", &max]).work,
+            MAX_MINUTES * 60
+        );
+    }
+
+    #[test]
+    fn pomodoro_rejects_countdown_options() {
+        for args in [
+            &["-H", "1", "pomodoro"][..],
+            &["-M", "0", "pomodoro"][..],
+            &["--seconds", "5", "pomodoro"][..],
+            &["1:30", "pomodoro"][..],
+        ] {
+            let err = parse(args).unwrap_err();
+            assert_eq!(err.kind(), ErrorKind::ArgumentConflict, "{args:?}");
+        }
+        assert!(parse(&["pomodoro", "5"]).is_err());
+        assert!(parse(&["pomodoro", "-M", "5"]).is_err());
     }
 
     #[test]
