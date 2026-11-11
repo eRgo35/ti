@@ -6,7 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.6.0] - 2026-11-11
+## [1.6.1] - 2026-11-11
+
+### Fixed
+- Release: the Linux musl binary is built on an Ubuntu 24.04 runner. The Ubuntu 22.04 runner could not reach Ubuntu's package mirror to install `musl-tools`, so the 1.6.0 GitHub Release was never published. 1.6.1 has the same code as 1.6.0.
+
+## [1.6.0] - 2026-11-11 [YANKED]
+
+Tagged but not released: the GitHub Release build failed and 1.6.0 was not published to crates.io. Use 1.6.1.
 
 ### Added
 - `ti pomodoro`: work sessions and breaks in a loop (25 / 5 minutes, 15 minute long break after every 4th session by default; `--work`, `--break`, `--long-break` and `--rounds` change them). The next phase starts on its own with a terminal bell, the status line shows the phase and round, breaks are drawn in green, `N` skips to the next phase, and a session resumes from its own cache file (`ti_pomodoro.tmp`).
