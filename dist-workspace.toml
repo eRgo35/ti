@@ -4,7 +4,7 @@ members = ["cargo:."]
 # Config for 'dist'
 [dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.33.0"
+cargo-dist-version = "0.34.0"
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
@@ -15,10 +15,27 @@ targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
+# Publish GitHub build provenance for the release artifacts
+github-attestations = true
+# Build every release target on pull requests, so a broken target shows up
+# before a tag is pushed
+pr-run-mode = "upload"
 
-# macos-14 (dist default for aarch64-apple-darwin) is in brownout and retired 2026-11-02
 [dist.github-custom-runners]
-aarch64-apple-darwin = "macos-15"
-# The ubuntu-22.04 runner could not reach Ubuntu's package mirror to install
-# musl-tools, which blocked the 1.6.0 GitHub Release.
-x86_64-unknown-linux-musl = "ubuntu-24.04"
+# Everything except the per-target builds below (plan, installers, release).
+global = "ubuntu-24.04"
+
+# Build musl inside manylinux (dnf, not apt), like dist itself does. On a
+# plain runner dist installs musl-tools with apt, and GitHub's Ubuntu mirror
+# was unreachable for the 1.6.0 and 1.6.1 releases.
+[dist.github-custom-runners.x86_64-unknown-linux-musl.container]
+image = "quay.io/pypa/manylinux_2_28_x86_64"
+host = "x86_64-unknown-linux-musl"
+
+# Actions pinned to commit SHAs, resolved from each release tag.
+[dist.github-action-commits]
+"actions/checkout" = "3d3c42e5aac5ba805825da76410c181273ba90b1" # v7.0.1
+"actions/upload-artifact" = "cf430e030ddbb5b0abf93d22962f4752f3646cd9" # v7.0.2
+"actions/download-artifact" = "9000827ccba6bdab643e8b6fd33ac0654aef8333" # v8.0.2
+"actions/attest" = "1e69f48acb82d1966a394da916b4c1698aa569d6" # v4.2.2
+"swatinem/rust-cache" = "d1527c8f67ef9af357290475d4af4b0fab8f12e0" # v2.9.3
