@@ -115,14 +115,14 @@ skips apt only when the build runs in a container that doesn't use apt.
 
 ### Task 5: Pull request
 
-- [ ] Owner go-ahead → push, open the PR. Wait for green: CI on three
+- [x] Owner go-ahead → push, open the PR. Wait for green: CI on three
       systems and the release workflow building all five targets (D6).
-- [ ] Download the PR's musl and gnu artifacts and check Review Focus 1 and 2.
-- [ ] Owner go-ahead → merge.
+- [x] Download the PR's musl and gnu artifacts and check Review Focus 1 and 2.
+- [x] Owner go-ahead → merge.
 
 ### Task 6: Release 1.6.2
 
-- [ ] Release PR: version 1.6.2, `CHANGELOG.md` (pipeline changes; note that
+- [x] Release PR: version 1.6.2, `CHANGELOG.md` (pipeline changes; note that
       1.6.0 and 1.6.1 were tagged but not released). Merge after green.
 - [ ] Owner go-ahead → signed tag `v1.6.2`, push, watch the release: all
       five targets, installers and attestations on the GitHub Release.
@@ -137,3 +137,9 @@ skips apt only when the build runs in a container that doesn't use apt.
   --release --locked --target x86_64-unknown-linux-musl` builds in 6s. `file`:
   "static-pie linked"; `ldd`: "statically linked"; `ti --version` and
   `ti pomodoro --help` run on the Fedora 44 host.
+- Task 5 (PR #19): CI passed: fmt and clippy, plus **tests on ubuntu, macos
+  and windows** (the first Windows test run; it found
+  `missing_file_is_error`, fixed in Task 4). The release workflow built all
+  five targets in upload mode. Its artifacts:
+  - musl: "static-pie linked", runs (`ti 1.6.1`) on Fedora 44.
+  - gnu: dynamically linked, highest symbol `GLIBC_2.34` (≤ 2.35).
