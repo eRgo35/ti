@@ -82,20 +82,22 @@ skips apt only when the build runs in a container that doesn't use apt.
 
 ### Task 2: Prove the container build locally
 
-- [ ] Using podman: in `quay.io/pypa/manylinux_2_28_x86_64`, install rustup
+- [x] Using podman: in `quay.io/pypa/manylinux_2_28_x86_64`, install rustup
       and build `--release --target x86_64-unknown-linux-musl`, the same way
       the workflow will.
-- [ ] `file` shows a static binary; `ti --version` and `ti --help` run on the host.
+- [x] `file` shows a static binary; `ti --version` and `ti --help` run on the host.
 
 ### Task 3: Pin actions
 
 **Files:** `dist-workspace.toml`, `.github/workflows/ci.yml`, `release.yml` (regenerated)
 
-- [ ] Resolve each action's SHA from its latest release tag with `gh api`:
+- [x] Resolve each action's SHA from its latest release tag with `gh api`:
       `actions/checkout`, `upload-artifact`, `download-artifact`,
-      `actions/attest`, `dtolnay/rust-toolchain`, `Swatinem/rust-cache`.
-- [ ] `github-action-commits` in the dist config; `dist generate`.
-- [ ] Commit `ci: pin actions to commit SHAs`.
+      `actions/attest`, `dtolnay/rust-toolchain`, `Swatinem/rust-cache`
+      (dist 0.34 adds `swatinem/rust-cache@v2` to the build job; an automated
+      security review flagged it as unpinned after Task 1).
+- [x] `github-action-commits` in the dist config; `dist generate`.
+- [x] Commit `ci: pin actions to commit SHAs`.
 
 ### Task 4: CI on all three systems
 
@@ -127,4 +129,8 @@ skips apt only when the build runs in a container that doesn't use apt.
 
 ## Verification
 
-_Filled in during Tasks 2, 5 and 6._
+- Task 2 (local, podman 5.8.9): in `quay.io/pypa/manylinux_2_28_x86_64`
+  (AlmaLinux 8.10; there is no `apt-get` in the image), rustup + `cargo build
+  --release --locked --target x86_64-unknown-linux-musl` builds in 6s. `file`:
+  "static-pie linked"; `ldd`: "statically linked"; `ti --version` and
+  `ti pomodoro --help` run on the Fedora 44 host.
