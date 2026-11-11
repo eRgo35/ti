@@ -103,12 +103,12 @@ skips apt only when the build runs in a container that doesn't use apt.
 
 **Files:** `.github/workflows/ci.yml`, `CLAUDE.md`
 
-- [ ] Replace the Linux-only `test` job and the `build` matrix with one
+- [x] Replace the Linux-only `test` job and the `build` matrix with one
       matrix (`ubuntu-latest`, `macos-latest`, `windows-latest`) running
       `cargo test --locked` and `cargo build --locked --all-targets`.
-- [ ] `persist-credentials: false` and `timeout-minutes: 15` on every job.
-- [ ] `CLAUDE.md`: CI now runs the tests on all three systems.
-- [ ] Commit `ci: run tests on Linux, macOS and Windows`.
+- [x] `persist-credentials: false` and `timeout-minutes: 15` on every job.
+- [x] `CLAUDE.md`: CI now runs the tests on all three systems.
+- [x] Commit `ci: run tests on Linux, macOS and Windows`.
 
 ### Task 5: Pull request
 

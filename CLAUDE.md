@@ -33,8 +33,8 @@ lookups are exempt.
 
 ## Quality gates
 
-Run these before every commit. CI runs fmt, clippy and the tests on Linux,
-and the build on Linux, macOS and Windows:
+Run these before every commit. CI runs fmt and clippy on Linux, and the
+tests and build on Linux, macOS and Windows:
 
 ```sh
 cargo fmt --check
