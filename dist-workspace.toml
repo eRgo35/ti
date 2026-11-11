@@ -19,3 +19,6 @@ install-updater = false
 # macos-14 (dist default for aarch64-apple-darwin) is in brownout and retired 2026-11-02
 [dist.github-custom-runners]
 aarch64-apple-darwin = "macos-15"
+# The ubuntu-22.04 runner could not reach Ubuntu's package mirror to install
+# musl-tools, which blocked the 1.6.0 GitHub Release.
+x86_64-unknown-linux-musl = "ubuntu-24.04"
