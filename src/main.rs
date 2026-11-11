@@ -21,8 +21,13 @@ use timer::time_to_countdown;
 fn main() -> ExitCode {
     let args = Args::try_parse_args(std::env::args_os()).unwrap_or_else(|err| err.exit());
 
-    let (cache_name, original) = match &args.command {
-        Some(Command::Pomodoro(_)) => ("ti_pomodoro.tmp", 0),
+    let now = Instant::now();
+    let cache;
+    let app = match &args.command {
+        Some(Command::Pomodoro(pomodoro)) => {
+            cache = Cache::new(args.cache, "ti_pomodoro.tmp");
+            App::pomodoro(pomodoro.config(), &cache, args.clear, now)
+        }
         None => {
             let (hours, minutes, seconds) =
                 args.time
@@ -32,22 +37,15 @@ fn main() -> ExitCode {
                     .error(ErrorKind::ValueValidation, "the total time is too large")
                     .exit();
             };
-            ("ti_countdown.tmp", original)
+            cache = Cache::new(args.cache, "ti_countdown.tmp");
+            App::countdown(original, &cache, args.clear, now)
         }
     };
 
-    let cache = Cache::new(args.cache, cache_name);
     let font = load_font(&args.font).unwrap_or_else(|err| {
         eprintln!("error: {err}");
         process::exit(1);
     });
-    let now = Instant::now();
-    let app = match &args.command {
-        Some(Command::Pomodoro(pomodoro)) => {
-            App::pomodoro(pomodoro.config(), &cache, args.clear, now)
-        }
-        None => App::countdown(original, &cache, args.clear, now),
-    };
 
     // The terminal is restored by the time handle_interface returns.
     match handle_interface(app, font) {

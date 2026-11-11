@@ -91,15 +91,15 @@ The status line shows the phase and round, for example `WORK 2/4` or `LONG BREAK
 
 ### Key bindings
 
-| Key      | Action                                 |
-| -------- | -------------------------------------- |
-| `SPACE`  | Pause / resume                         |
-| `P`      | Pause                                  |
-| `S`      | Start (resume)                         |
+| Key      | Action                                                               |
+| -------- | -------------------------------------------------------------------- |
+| `SPACE`  | Pause / resume                                                       |
+| `P`      | Pause                                                                |
+| `S`      | Start (resume)                                                       |
 | `R`      | Reset to the original duration (pomodoro: restart the current phase) |
-| `N`      | Pomodoro only: skip to the next phase  |
-| `Q`      | Quit                                   |
-| `Ctrl+C` | Quit immediately with exit code `1`    |
+| `N`      | Pomodoro only: skip to the next phase                                |
+| `Q`      | Quit                                                                 |
+| `Ctrl+C` | Quit immediately with exit code `1`                                  |
 
 Keys are case-insensitive.
 

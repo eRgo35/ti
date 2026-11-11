@@ -11,6 +11,7 @@ documentation = "https://github.com/eRgo35/ti"
 keywords = ["timer", "terminal", "tty", "rust", "figlet"]
 license = "MIT"
 readme = "README.md"
+exclude = ["CLAUDE.md", "docs/"]
 
 [package.metadata.wix]
 upgrade-guid = "D47D5FC0-4E43-4FAF-98C7-7DE1D67AA506"
