@@ -71,14 +71,14 @@ skips apt only when the build runs in a container that doesn't use apt.
 
 **Files:** `dist-workspace.toml`, `.github/workflows/release.yml`, `wix/main.wxs` (regenerated)
 
-- [ ] Install dist 0.34.0 locally.
-- [ ] Config: `cargo-dist-version = "0.34.0"`; drop the `aarch64-apple-darwin`
+- [x] Install dist 0.34.0 locally.
+- [x] Config: `cargo-dist-version = "0.34.0"`; drop the `aarch64-apple-darwin`
       override; `global = "ubuntu-24.04"`; musl in the manylinux container
       (`host = "x86_64-unknown-linux-musl"`); `github-attestations = true`;
       `pr-run-mode = "upload"`.
-- [ ] `dist generate`; `dist plan` shows musl in the container with no apt
+- [x] `dist generate`; `dist plan` shows musl in the container with no apt
       step, and gnu on `ubuntu-22.04`.
-- [ ] Commit `ci(release): update dist to 0.34.0 and build musl in a manylinux container`.
+- [x] Commit `ci(release): update dist to 0.34.0 and build musl in a manylinux container`.
 
 ### Task 2: Prove the container build locally
 
