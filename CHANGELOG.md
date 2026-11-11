@@ -6,10 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.6.1] - 2026-11-11
+## [1.6.2] - 2026-11-11
 
-### Fixed
-- Release: the Linux musl binary is built on an Ubuntu 24.04 runner. The Ubuntu 22.04 runner could not reach Ubuntu's package mirror to install `musl-tools`, so the 1.6.0 GitHub Release was never published. 1.6.1 has the same code as 1.6.0.
+First published release of the 1.6 line: `ti pomodoro` and the dependency updates from 1.6.0 below.
+
+### Changed
+- Release pipeline: dist 0.34.0. The Linux musl binary is built in a `manylinux_2_28` container instead of installing `musl-tools` with apt, which failed for 1.6.0 and 1.6.1 when GitHub's Ubuntu mirror was unreachable. Release artifacts get GitHub build attestations (`gh attestation verify`), and every GitHub Action is pinned to a commit.
+- CI runs the tests on Linux, macOS and Windows (before, only Linux ran them), and pull requests build all five release targets.
+
+## [1.6.1] - 2026-11-11 [YANKED]
+
+Tagged but not released: the musl build failed again on an Ubuntu 24.04 runner for the same reason. Use 1.6.2.
 
 ## [1.6.0] - 2026-11-11 [YANKED]
 
