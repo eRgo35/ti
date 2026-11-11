@@ -11,7 +11,7 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{self, Clear, ClearType},
 };
-use figlet_rs::FIGfont;
+use figlet_rs::FIGlet;
 
 use crate::{cache::Cache, timer::Timer};
 
@@ -91,7 +91,7 @@ fn handle_keyboard(
 
 /// Lines of the big clock. Falls back to plain text if the font cannot render
 /// the time.
-fn render_lines(font: &FIGfont, time: &str) -> Vec<String> {
+fn render_lines(font: &FIGlet, time: &str) -> Vec<String> {
     let lines: Vec<String> = font
         .convert(time)
         .map(|figure| figure.to_string().lines().map(str::to_owned).collect())
@@ -147,7 +147,7 @@ fn clip(text: &str, max: usize) -> &str {
     }
 }
 
-fn draw_timer(out: &mut impl Write, timer: &Timer, font: &FIGfont) -> io::Result<()> {
+fn draw_timer(out: &mut impl Write, timer: &Timer, font: &FIGlet) -> io::Result<()> {
     let lines = render_lines(font, &timer.print());
     let (width, height) = terminal::size()?;
     let (x, y) = centered_origin(&lines, width, height);
@@ -182,7 +182,7 @@ fn draw_timer(out: &mut impl Write, timer: &Timer, font: &FIGfont) -> io::Result
     out.flush()
 }
 
-pub fn handle_interface(mut timer: Timer, cache: &Cache, font: FIGfont) -> io::Result<Outcome> {
+pub fn handle_interface(mut timer: Timer, cache: &Cache, font: FIGlet) -> io::Result<Outcome> {
     let _guard = TerminalGuard::new()?;
     let mut out = stdout();
 

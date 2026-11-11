@@ -1,25 +1,38 @@
 use std::panic::{self, AssertUnwindSafe};
 
-use figlet_rs::FIGfont;
+use figlet_rs::FIGlet;
 
 const ANSI_MONO: &str = include_str!("../resources/ANSI_Mono.flf");
 
 /// Loads the font at `path`; an empty path selects the embedded default.
 /// An explicitly requested font that cannot be loaded is an error rather than
 /// being silently replaced.
-pub fn load_font(path: &str) -> Result<FIGfont, String> {
+pub fn load_font(path: &str) -> Result<FIGlet, String> {
     if path.is_empty() {
-        return FIGfont::from_content(ANSI_MONO).or_else(|_| FIGfont::standard());
+        return FIGlet::from_content(ANSI_MONO).or_else(|_| FIGlet::standard());
     }
 
-    // figlet-rs indexes and subtracts without bounds checks, so a truncated
-    // font file panics inside the parser instead of returning an error.
+    // The figlet-rs parser can still panic on some malformed headers (for
+    // example a zero height) instead of returning an error.
     let content =
         std::fs::read_to_string(path).map_err(|err| format!("cannot read font '{path}': {err}"))?;
 
-    quietly_catch_panic(|| FIGfont::from_content(&content))
+    quietly_catch_panic(|| FIGlet::from_content(&content))
         .unwrap_or_else(|| Err("malformed font file".to_string()))
+        .and_then(require_clock_glyphs)
         .map_err(|err| format!("invalid font '{path}': {err}"))
+}
+
+/// figlet-rs loads fonts with missing glyphs and silently skips them when
+/// rendering, so a truncated file would draw a broken clock.
+fn require_clock_glyphs(font: FIGlet) -> Result<FIGlet, String> {
+    match "0123456789:"
+        .chars()
+        .find(|c| !font.fonts.contains_key(&u32::from(*c)))
+    {
+        Some(missing) => Err(format!("no glyph for '{missing}'")),
+        None => Ok(font),
+    }
 }
 
 /// Runs `f`, returning `None` if it panicked, without printing the panic
@@ -72,6 +85,14 @@ mod tests {
         let path = temp_font("truncated_font", &format!("{header}{glyphs}"));
         let res = load_font(&path.to_string_lossy());
         let _ = std::fs::remove_file(&path);
-        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("no glyph for '0'"));
+    }
+
+    #[test]
+    fn zero_height_font_is_error_not_panic() {
+        let path = temp_font("zero_height_font", "flf2a$ 0 0 4 0 0\nx@\n");
+        let res = load_font(&path.to_string_lossy());
+        let _ = std::fs::remove_file(&path);
+        assert!(res.unwrap_err().contains("malformed font file"));
     }
 }
