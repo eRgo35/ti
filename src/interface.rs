@@ -184,11 +184,16 @@ fn clip(text: &str, max: usize) -> &str {
     }
 }
 
-fn draw_timer(out: &mut impl Write, app: &App, font: &FIGlet) -> io::Result<()> {
+/// Draws the whole screen for a `width` x `height` terminal.
+fn draw_timer(
+    out: &mut impl Write,
+    app: &App,
+    font: &FIGlet,
+    (width, height): (u16, u16),
+) -> io::Result<()> {
     let timer = app.timer();
     let pomodoro = app.pomodoro_state();
     let lines = render_lines(font, &timer.print());
-    let (width, height) = terminal::size()?;
     let (x, y) = centered_origin(&lines, width, height);
     let status_row = height.saturating_sub(1);
 
@@ -243,7 +248,7 @@ pub fn handle_interface(mut app: App, font: FIGlet) -> io::Result<Outcome> {
         }
 
         if dirty {
-            draw_timer(&mut out, &app, &font)?;
+            draw_timer(&mut out, &app, &font, terminal::size()?)?;
             dirty = false;
         }
 
@@ -418,6 +423,100 @@ mod tests {
         pomodoro.advance(); // long break
         assert_eq!(pomodoro.label(), "LONG BREAK");
         assert_eq!(phase_color(&pomodoro), Color::Green);
+    }
+
+    /// The escape sequence `queue!` writes for `command`.
+    fn ansi(command: impl crossterm::Command) -> String {
+        let mut buf = Vec::new();
+        queue!(buf, command).unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    /// Draws `app` into a buffer as a `width` x `height` terminal.
+    fn draw(app: &App, size: (u16, u16)) -> String {
+        let font = crate::font::load_font("").unwrap();
+        let mut buf = Vec::new();
+        draw_timer(&mut buf, app, &font, size).unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    /// A cache that drawing never touches.
+    fn unused_cache() -> crate::cache::Cache {
+        let path = std::env::temp_dir().join(format!("ti_test_{}_draw", std::process::id()));
+        crate::cache::Cache::new(path.to_string_lossy().into_owned(), "unused")
+    }
+
+    #[test]
+    fn draw_puts_status_line_on_last_row() {
+        let cache = unused_cache();
+        let app = App::countdown(65, &cache, true, Instant::now());
+        let screen = draw(&app, (120, 30));
+        let status_row = screen.find(&ansi(MoveTo(0, 29))).expect("status row");
+        let status = screen
+            .find("SPACE [Pause] | R [Reset] | Q [Quit]")
+            .expect("status text");
+        assert!(status_row < status, "{screen:?}");
+        // The 72x7 clock is centred: its first row starts at (24, 11).
+        assert!(screen.contains(&ansi(MoveTo(24, 11))), "{screen:?}");
+    }
+
+    #[test]
+    fn draw_clips_status_line() {
+        let cache = unused_cache();
+        let app = App::countdown(65, &cache, true, Instant::now());
+        let screen = draw(&app, (9, 30));
+        assert!(screen.contains("SPACE [Pa"), "{screen:?}");
+        assert!(!screen.contains("SPACE [Pau"), "{screen:?}");
+
+        let t0 = Instant::now();
+        let mut app = App::pomodoro(CONFIG, &cache, true, t0);
+        app.key('p', t0);
+        // 8 chars of "WORK 1/2 PAUSED", nothing of the next segment.
+        let screen = draw(&app, (8, 30));
+        assert!(screen.contains("WORK 1/2"), "{screen:?}");
+        assert!(!screen.contains("WORK 1/2 "), "{screen:?}");
+        assert!(!screen.contains("SPACE"), "{screen:?}");
+    }
+
+    #[test]
+    fn draw_keeps_clock_off_the_status_row() {
+        let cache = unused_cache();
+        let app = App::countdown(65, &cache, true, Instant::now());
+        // A 3-row terminal: the 5-row figure gets rows 0 and 1 only.
+        let screen = draw(&app, (200, 3));
+        assert!(screen.contains(&ansi(MoveTo(64, 0))), "{screen:?}");
+        assert!(screen.contains(&ansi(MoveTo(64, 1))), "{screen:?}");
+        assert!(!screen.contains(&ansi(MoveTo(64, 2))), "{screen:?}");
+        assert!(screen.contains(&ansi(MoveTo(0, 2))), "{screen:?}");
+    }
+
+    #[test]
+    fn draw_colours_breaks_green_and_pauses_grey() {
+        let cache = unused_cache();
+        let t0 = Instant::now();
+        let mut app = App::pomodoro(CONFIG, &cache, true, t0);
+        let green = ansi(SetForegroundColor(Color::Green));
+        let grey = ansi(SetForegroundColor(Color::DarkGrey));
+        assert!(!draw(&app, (120, 30)).contains(&green));
+
+        app.key('n', t0); // break
+        let screen = draw(&app, (120, 30));
+        // The clock and the label are both green.
+        assert_eq!(screen.matches(&green).count(), 2, "{screen:?}");
+
+        app.key('p', t0);
+        let screen = draw(&app, (120, 30));
+        assert!(!screen.contains(&green), "{screen:?}");
+        assert!(screen.contains(&grey), "{screen:?}");
+    }
+
+    #[test]
+    fn draw_survives_a_zero_size_terminal() {
+        let cache = unused_cache();
+        let app = App::countdown(65, &cache, true, Instant::now());
+        for size in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            draw(&app, size);
+        }
     }
 
     #[test]
