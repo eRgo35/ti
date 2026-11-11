@@ -108,6 +108,9 @@ skips apt only when the build runs in a container that doesn't use apt.
       `cargo test --locked` and `cargo build --locked --all-targets`.
 - [x] `persist-credentials: false` and `timeout-minutes: 15` on every job.
 - [x] `CLAUDE.md`: CI now runs the tests on all three systems.
+- [x] Found before pushing: `font::tests::missing_file_is_error` checked
+      for the Unix text "No such file", which Windows doesn't print. It now
+      checks `ti`'s own message instead. This is the plan's only test change.
 - [x] Commit `ci: run tests on Linux, macOS and Windows`.
 
 ### Task 5: Pull request

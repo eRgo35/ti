@@ -64,8 +64,11 @@ mod tests {
     #[test]
     fn missing_file_is_error() {
         let err = load_font("/definitely/not/a/font.flf").unwrap_err();
-        assert!(err.contains("/definitely/not/a/font.flf"), "{err}");
-        assert!(err.contains("No such file"), "{err}");
+        // The OS's own wording differs (Windows has no "No such file").
+        assert!(
+            err.starts_with("cannot read font '/definitely/not/a/font.flf': "),
+            "{err}"
+        );
     }
 
     #[test]
