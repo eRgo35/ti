@@ -1,5 +1,6 @@
 use std::{
     env::temp_dir,
+    fmt::Display,
     fs::{read_to_string, remove_file, write},
     path::PathBuf,
 };
@@ -11,9 +12,10 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn new(cache_file: String) -> Self {
+    /// Uses `cache_file`, or `default_name` in the temp directory if empty.
+    pub fn new(cache_file: String, default_name: &str) -> Self {
         let cache_file = if cache_file.is_empty() {
-            temp_dir().join("ti_countdown.tmp")
+            temp_dir().join(default_name)
         } else {
             PathBuf::from(cache_file)
         };
@@ -25,12 +27,16 @@ impl Cache {
         let _ = remove_file(&self.cache_file);
     }
 
-    pub fn save(&self, countdown: u64) {
-        let _ = write(&self.cache_file, countdown.to_string());
+    pub fn save(&self, value: impl Display) {
+        let _ = write(&self.cache_file, value.to_string());
+    }
+
+    pub fn load_text(&self) -> Option<String> {
+        read_to_string(&self.cache_file).ok()
     }
 
     pub fn load(&self) -> Option<u64> {
-        read_to_string(&self.cache_file).ok()?.trim().parse().ok()
+        self.load_text()?.trim().parse().ok()
     }
 }
 
@@ -42,7 +48,7 @@ mod tests {
     fn temp_cache(name: &str) -> Cache {
         let path = temp_dir().join(format!("ti_test_{}_{}", std::process::id(), name));
         let _ = fs::remove_file(&path);
-        Cache::new(path.to_string_lossy().into_owned())
+        Cache::new(path.to_string_lossy().into_owned(), "unused")
     }
 
     #[test]
@@ -105,7 +111,7 @@ mod tests {
         let path = temp_dir()
             .join(format!("ti_test_{}_nonexistent_dir", std::process::id()))
             .join("c");
-        let cache = Cache::new(path.to_string_lossy().into_owned());
+        let cache = Cache::new(path.to_string_lossy().into_owned(), "unused");
         cache.save(5);
         assert_eq!(cache.load(), None);
         cache.clear();

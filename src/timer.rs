@@ -135,6 +135,15 @@ impl Timer {
         }
     }
 
+    /// When the countdown reached 0: the deadline of its last tick. `None`
+    /// while it is still counting.
+    pub fn finished_at(&self) -> Option<Instant> {
+        match self.state {
+            State::Running { next_tick } if self.is_finished() => Some(next_tick - SECOND),
+            _ => None,
+        }
+    }
+
     pub fn is_finished(&self) -> bool {
         self.countdown == 0
     }
@@ -328,6 +337,16 @@ mod tests {
     fn from_cache_zero_starts_fresh() {
         let t = Timer::from_cache(0, 30, Instant::now());
         assert_eq!(t.countdown(), 30);
+    }
+
+    #[test]
+    fn finished_at_is_the_last_deadline() {
+        let t0 = Instant::now();
+        let mut t = Timer::new(2, t0);
+        assert_eq!(t.finished_at(), None);
+        t.tick(t0 + Duration::from_millis(5300));
+        assert_eq!(t.finished_at(), Some(t0 + secs(2)));
+        assert_eq!(Timer::new(0, t0).finished_at(), Some(t0));
     }
 
     #[test]

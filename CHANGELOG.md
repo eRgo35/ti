@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `ti pomodoro`: work sessions and breaks in a loop (25 / 5 minutes, 15 minute long break after every 4th session by default; `--work`, `--break`, `--long-break` and `--rounds` change them). The next phase starts on its own with a terminal bell, the status line shows the phase and round, breaks are drawn in green, `N` skips to the next phase, and a session resumes from its own cache file (`ti_pomodoro.tmp`).
+- End-to-end tests of the command line (`tests/cli.rs`) and unit tests for the timer logic without a terminal, including whole pomodoro cycles and cache resume.
+
+### Changed
+- Dependencies updated: clap 4.6, crossterm 0.29, figlet-rs 1.0, and a refreshed `Cargo.lock`.
+- `--font` now also rejects a font without glyphs for the digits or `:`. figlet-rs 1.0 loads such files without error and would draw an incomplete clock.
+- `--help` no longer prints an empty `[default: ]` for `--font` and `--cache`.
+
 ## [1.5.0] - 2026-10-19
 
 ### Fixed

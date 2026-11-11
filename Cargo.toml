@@ -11,6 +11,7 @@ documentation = "https://github.com/eRgo35/ti"
 keywords = ["timer", "terminal", "tty", "rust", "figlet"]
 license = "MIT"
 readme = "README.md"
+exclude = ["CLAUDE.md", "docs/"]
 
 [package.metadata.wix]
 upgrade-guid = "D47D5FC0-4E43-4FAF-98C7-7DE1D67AA506"
@@ -19,9 +20,9 @@ license = false
 eula = false
 
 [dependencies]
-clap = { version = "4.5.14", features = ["derive"] }
-crossterm = "0.28.1"
-figlet-rs = "0.1.5"
+clap = { version = "4.6.7", features = ["derive"] }
+crossterm = "0.29.0"
+figlet-rs = "1.0.0"
 
 # The profile that 'cargo dist' will build with
 [profile.dist]
