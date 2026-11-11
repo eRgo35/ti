@@ -1,5 +1,8 @@
 # CI and Release Pipelines Update Plan
 
+**Status:** done 2026-11-11. 1.6.2 is released on GitHub and crates.io
+and installed on the owner's machine.
+
 **Goal:** Bring the CI and release workflows up to date, following dist's
 own setup and astral's ruff/uv, so the Linux musl build no longer depends on
 Ubuntu's apt mirror. Then release 1.6.2 to GitHub Releases and crates.io and
@@ -124,10 +127,10 @@ skips apt only when the build runs in a container that doesn't use apt.
 
 - [x] Release PR: version 1.6.2, `CHANGELOG.md` (pipeline changes; note that
       1.6.0 and 1.6.1 were tagged but not released). Merge after green.
-- [ ] Owner go-ahead → signed tag `v1.6.2`, push, watch the release: all
+- [x] Owner go-ahead → signed tag `v1.6.2`, push, watch the release: all
       five targets, installers and attestations on the GitHub Release.
-- [ ] `cargo publish --locked` (1.6.2).
-- [ ] `cargo install ti --locked` on the owner's machine; `ti --version`
+- [x] `cargo publish --locked` (1.6.2).
+- [x] `cargo install ti --locked` on the owner's machine; `ti --version`
       prints 1.6.2.
 
 ## Verification
@@ -143,3 +146,14 @@ skips apt only when the build runs in a container that doesn't use apt.
   five targets in upload mode. Its artifacts:
   - musl: "static-pie linked", runs (`ti 1.6.1`) on Fedora 44.
   - gnu: dynamically linked, highest symbol `GLIBC_2.34` (≤ 2.35).
+- Task 6: release PR #20 green (12 checks). The `v1.6.2` release run passed
+  every job, and the GitHub Release has the five target archives, the
+  shell, PowerShell and MSI installers, and checksums.
+  `gh attestation verify` on the musl archive verifies SLSA v1 provenance
+  from `release.yml@refs/tags/v1.6.2`. `cargo publish` uploaded 1.6.2.
+  `cargo install ti --locked` replaced 1.5.0 with 1.6.2 on the owner's
+  machine (`ti --version` prints `ti 1.6.2`).
+- Cleanup: deleted the merged branches (`feat/pomodoro`, `fix/musl-runner`,
+  `release/v1.6.0`, `ci/update-pipelines`, `release/v1.6.2`, both 2024
+  `release-plz-*` branches, the unmerged one at the owner's request; its
+  head `ad07ab2` is still reachable through PR #2).
