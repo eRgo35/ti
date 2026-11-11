@@ -81,19 +81,28 @@ impl<'a> App<'a> {
     }
 
     /// Advances the countdown to `now`. In pomodoro mode a finished phase
-    /// starts the next one straight away.
+    /// starts the next one at the moment it ended, so time that ran past
+    /// the end (a late loop) counts against the next phases.
     pub fn tick(&mut self, now: Instant) -> Update {
-        if !self.timer.tick(now) {
-            return Update::Unchanged;
+        let mut update = if self.timer.tick(now) {
+            Update::Changed
+        } else {
+            Update::Unchanged
+        };
+
+        // Also catches a phase that a key press (pause) finished. Every
+        // phase lasts at least a second, so this ends.
+        if self.pomodoro.is_some() {
+            while let Some(ended) = self.timer.finished_at() {
+                self.next_phase(ended);
+                self.timer.tick(now);
+                update = Update::PhaseEnded;
+            }
         }
 
-        let mut update = Update::Changed;
-        if self.timer.is_finished() && self.pomodoro.is_some() {
-            self.next_phase(now);
-            update = Update::PhaseEnded;
+        if update != Update::Unchanged {
+            self.save();
         }
-
-        self.save();
         update
     }
 
@@ -123,10 +132,11 @@ impl<'a> App<'a> {
         false
     }
 
-    fn next_phase(&mut self, now: Instant) {
+    /// Moves to the next pomodoro phase, starting it at `start`.
+    fn next_phase(&mut self, start: Instant) {
         if let Some(pomodoro) = &mut self.pomodoro {
             pomodoro.advance();
-            self.timer = Timer::new(pomodoro.duration(), now);
+            self.timer = Timer::new(pomodoro.duration(), start);
         }
     }
 
@@ -438,12 +448,46 @@ mod tests {
         let c = TempCache::new("pomo_restart");
         let t0 = Instant::now();
         let mut app = App::pomodoro(CONFIG, &c.0, false, t0);
-        app.tick(t0 + secs(4)); // late UI: catches up 3s, ends WORK 1/2
-        assert_eq!(label(&app), "BREAK 1/2");
-        assert!(app.key('q', t0 + secs(4)));
+        app.tick(t0 + secs(2));
+        assert!(app.key('q', t0 + secs(2)));
 
         let app = App::pomodoro(CONFIG, &c.0, false, t0 + secs(60));
-        assert_eq!(label(&app), "BREAK 1/2");
+        assert_eq!(label(&app), "WORK 1/2");
         assert_eq!(app.timer().countdown(), 1);
+    }
+
+    #[test]
+    fn late_tick_carries_overrun_across_phases() {
+        let c = TempCache::new("pomo_overrun");
+        let t0 = Instant::now();
+        let mut app = App::pomodoro(CONFIG, &c.0, false, t0);
+        // WORK 1/2 ends at 3s, BREAK 1/2 at 4s, WORK 2/2 runs 4s..7s.
+        // A loop that wakes up at 5.5s must land in WORK 2/2 with 2s left
+        // (the next decrement at 6s), and report one phase change.
+        let late = t0 + Duration::from_millis(5500);
+        assert_eq!(app.tick(late), Update::PhaseEnded);
+        assert_eq!(label(&app), "WORK 2/2");
+        assert_eq!(app.timer().countdown(), 2);
+        assert_eq!(app.until_next_tick(late), Some(Duration::from_millis(500)));
+        assert_eq!(c.contents().as_deref(), Some("work 2 2"));
+        // Late by more than a whole cycle: 3+1+3+2 = 9s per cycle.
+        let very_late = t0 + secs(9 + 9 + 1);
+        assert_eq!(app.tick(very_late), Update::PhaseEnded);
+        assert_eq!(label(&app), "WORK 1/2");
+        assert_eq!(app.timer().countdown(), 2);
+    }
+
+    #[test]
+    fn pause_on_phase_end_moves_on() {
+        let c = TempCache::new("pomo_pause_end");
+        let t0 = Instant::now();
+        let mut app = App::pomodoro(CONFIG, &c.0, false, t0);
+        // The pause lands exactly when WORK 1/2 runs out.
+        app.key('p', t0 + secs(3));
+        assert_eq!(app.tick(t0 + secs(3)), Update::PhaseEnded);
+        assert_eq!(label(&app), "BREAK 1/2");
+        assert!(!app.timer().is_finished());
+        assert_eq!(app.tick(t0 + secs(4)), Update::PhaseEnded);
+        assert_eq!(label(&app), "WORK 2/2");
     }
 }
