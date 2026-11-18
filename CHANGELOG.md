@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+- README: what a running timer does while the computer sleeps (it pauses on Linux and macOS and catches up on Windows), and that `Ctrl+Z` doesn't suspend `ti`.
+
 ## [1.6.2] - 2026-11-11
 
 First published release of the 1.6 line: `ti pomodoro` and the dependency updates from 1.6.0 below.

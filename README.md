@@ -89,6 +89,8 @@ All values must be at least 1. `--font`, `--cache` and `--clear` work as for the
 
 The status line shows the phase and round, for example `WORK 2/4` or `LONG BREAK`. Breaks are drawn in green.
 
+Time the computer spends asleep doesn't count on Linux and macOS: after waking, the phase continues where it was. On Windows it does count, so the timer catches up and may skip the phases that ended during sleep. `Ctrl+Z` doesn't suspend `ti` (it's an ignored key).
+
 ### Key bindings
 
 | Key      | Action                                                               |
@@ -112,6 +114,7 @@ While the timer runs, the remaining time in seconds is saved every second to `ti
 - `R` resets the countdown and deletes the cache file. A running timer writes the file again on its next tick.
 - Quitting with `Q` or `Ctrl+C` keeps the cache file.
 - A timer that has finished starts fresh the next time.
+- Sleep works as for the pomodoro: time asleep doesn't count on Linux and macOS, but does on Windows.
 
 A pomodoro session is cached separately, in `ti_pomodoro.tmp` (or the `--cache` file), as its phase, round and remaining seconds. Starting `ti pomodoro` again continues the same phase and round; `--clear` starts a new session at the first work session. `R` restarts the current phase and keeps the session cached. A saved session whose round is beyond `--rounds` is ignored.
 
