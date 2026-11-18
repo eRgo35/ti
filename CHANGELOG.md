@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The Linux gnu binary (`x86_64-unknown-linux-gnu`) is built in a `manylinux_2_28` container and runs on glibc 2.28 or newer (1.6.2 needed 2.34). Both Linux release builds run on `ubuntu-24.04` instead of `ubuntu-22.04`.
+
 ### Documentation
 - README: what a running timer does while the computer sleeps (it pauses on Linux and macOS and catches up on Windows), and that `Ctrl+Z` doesn't suspend `ti`.
 
