@@ -68,9 +68,11 @@ When `TIME` is given, it replaces the `-H`/`-M`/`-S` flags entirely. Parts that 
 
 An invalid `TIME` (non-numeric, more than three components, or too large) is rejected with a usage error and exit code 2.
 
+When the countdown reaches 0, the terminal bell rings and the screen flashes (it's drawn in reverse video for a second), so you notice even with the bell muted. A timer that starts at 0 doesn't ring.
+
 ### Pomodoro
 
-`ti pomodoro` runs work sessions and breaks in a loop: 25 minutes of work, a 5 minute break, and a 15 minute long break after every 4th work session. When a phase ends, the terminal bell rings and the next phase starts on its own.
+`ti pomodoro` runs work sessions and breaks in a loop: 25 minutes of work, a 5 minute break, and a 15 minute long break after every 4th work session. When a phase ends, the terminal bell rings, the screen flashes for a second (in case the bell is muted), and the next phase starts on its own. Skipping with `N` doesn't ring.
 
 ```sh
 ti pomodoro                                  # 25 / 5 / 15, long break every 4 sessions

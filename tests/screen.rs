@@ -21,6 +21,10 @@ const DEADLINE: Duration = Duration::from_secs(10);
 const BELL: &[u8] = b"\x07";
 const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
 const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
+/// Reverse video: the screen flashes with every bell.
+const REVERSE: &[u8] = b"\x1b[7m";
+/// Clearing the screen starts every frame.
+const CLEAR: &[u8] = b"\x1b[2J";
 /// crossterm's `Color::Green` as a foreground colour.
 const GREEN: &[u8] = b"\x1b[38;5;10m";
 /// A terminal asking for the cursor position (ConPTY does this on start).
@@ -147,6 +151,22 @@ impl Screen {
         }
     }
 
+    /// Waits for the flash to end and checks that the screen is redrawn
+    /// without reverse video.
+    fn expect_flash_to_end(&mut self) {
+        thread::sleep(Duration::from_millis(1500));
+        let output = self.output();
+        let frame = output
+            .windows(CLEAR.len())
+            .rposition(|window| window == CLEAR)
+            .map_or(&output[..], |at| &output[at..]);
+        assert!(
+            find(frame, REVERSE).is_none(),
+            "still flashing: {}",
+            String::from_utf8_lossy(frame).escape_debug()
+        );
+    }
+
     /// Everything after the last `expect` match.
     fn unseen(&self) -> Vec<u8> {
         self.output()[self.seen..].to_vec()
@@ -224,17 +244,16 @@ const POMODORO: &[&str] = &[
 ];
 
 #[test]
-fn countdown_finishes() {
+fn countdown_finishes_with_bell_and_flash() {
     let mut screen = Screen::start("finishes", None, &["--clear", "-s", "2"], SIZE);
     screen.expect(HIDE_CURSOR);
     screen.expect(b"SPACE [Pause]");
+    assert!(find(&screen.unseen(), BELL).is_none());
+    screen.expect(BELL);
+    screen.expect(REVERSE);
     screen.expect(b"TIMER FINISHED");
-    assert!(
-        find(&screen.output(), BELL).is_none(),
-        "unexpected bell: {}",
-        screen.dump()
-    );
     screen.expect_cache("0");
+    screen.expect_flash_to_end();
 }
 
 #[test]
@@ -298,14 +317,18 @@ fn pomodoro_resumes_seeded_cache() {
 }
 
 #[test]
-fn pomodoro_phase_end_rings_bell_and_turns_green() {
+fn pomodoro_phase_end_rings_bell_flashes_and_turns_green() {
     let mut screen = Screen::start("pomo_bell", Some("work 2 2"), POMODORO, SIZE);
     screen.expect(b"WORK 2/3");
     assert!(find(&screen.unseen(), BELL).is_none());
     screen.expect(BELL);
+    screen.expect(REVERSE);
     screen.expect(GREEN);
     screen.expect(b"BREAK 2/3");
     screen.expect_cache("break 2 59");
+    screen.expect_flash_to_end();
+    screen.expect(GREEN);
+    screen.expect(b"BREAK 2/3");
 }
 
 #[test]

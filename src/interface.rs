@@ -8,7 +8,7 @@ use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     queue,
-    style::{Color, Print, ResetColor, SetForegroundColor},
+    style::{Attribute, Color, Print, ResetColor, SetAttribute, SetForegroundColor},
     terminal::{self, Clear, ClearType},
 };
 use figlet_rs::FIGlet;
@@ -184,12 +184,14 @@ fn clip(text: &str, max: usize) -> &str {
     }
 }
 
-/// Draws the whole screen for a `width` x `height` terminal.
+/// Draws the whole screen for a `width` x `height` terminal. `flashing`
+/// draws all of it in reverse video, the visible part of an alert.
 fn draw_timer(
     out: &mut impl Write,
     app: &App,
     font: &FIGlet,
     (width, height): (u16, u16),
+    flashing: bool,
 ) -> io::Result<()> {
     let timer = app.timer();
     let pomodoro = app.pomodoro_state();
@@ -198,6 +200,22 @@ fn draw_timer(
     let status_row = height.saturating_sub(1);
 
     queue!(out, Clear(ClearType::All))?;
+
+    if flashing {
+        // Erasing doesn't use reverse video, so fill every cell with a
+        // space. The last row stops a cell short: writing the bottom-right
+        // cell can make some terminals scroll.
+        queue!(out, SetAttribute(Attribute::Reverse))?;
+        let blank = " ".repeat(usize::from(width));
+        for row in 0..height {
+            let fill = if row + 1 == height {
+                clip(&blank, usize::from(width).saturating_sub(1))
+            } else {
+                &blank
+            };
+            queue!(out, MoveTo(0, row), Print(fill))?;
+        }
+    }
 
     if timer.is_paused() {
         queue!(out, SetForegroundColor(Color::DarkGrey))?;
@@ -224,6 +242,9 @@ fn draw_timer(
         queue!(out, SetForegroundColor(color), Print(text))?;
     }
     queue!(out, SetForegroundColor(Color::Reset))?;
+    if flashing {
+        queue!(out, SetAttribute(Attribute::Reset))?;
+    }
 
     out.flush()
 }
@@ -240,15 +261,17 @@ pub fn handle_interface(mut app: App, font: FIGlet) -> io::Result<Outcome> {
         match app.tick(now) {
             Update::Unchanged => {}
             Update::Changed => dirty = true,
-            Update::PhaseEnded => {
-                // Terminal bell.
+            Update::Alert => {
+                // Terminal bell; the screen also flashes, for terminals with
+                // the bell muted.
                 queue!(out, Print('\u{7}'))?;
                 dirty = true;
             }
         }
 
         if dirty {
-            draw_timer(&mut out, &app, &font, terminal::size()?)?;
+            let flashing = app.is_flashing(now);
+            draw_timer(&mut out, &app, &font, terminal::size()?, flashing)?;
             dirty = false;
         }
 
@@ -434,9 +457,13 @@ mod tests {
 
     /// Draws `app` into a buffer as a `width` x `height` terminal.
     fn draw(app: &App, size: (u16, u16)) -> String {
+        draw_with(app, size, false)
+    }
+
+    fn draw_with(app: &App, size: (u16, u16), flashing: bool) -> String {
         let font = crate::font::load_font("").unwrap();
         let mut buf = Vec::new();
-        draw_timer(&mut buf, app, &font, size).unwrap();
+        draw_timer(&mut buf, app, &font, size, flashing).unwrap();
         String::from_utf8(buf).unwrap()
     }
 
@@ -511,11 +538,37 @@ mod tests {
     }
 
     #[test]
+    fn draw_flash_inverts_whole_screen() {
+        let cache = unused_cache();
+        let app = App::countdown(65, &cache, true, Instant::now());
+        let reverse = ansi(SetAttribute(Attribute::Reverse));
+        let reset = ansi(SetAttribute(Attribute::Reset));
+        assert!(!draw(&app, (20, 5)).contains(&reverse));
+
+        let screen = draw_with(&app, (20, 5), true);
+        let start = screen.find(&reverse).expect("reverse video");
+        // Every row is filled; the last one stops a cell short so the
+        // terminal never scrolls.
+        for row in 0..4 {
+            let fill = format!("{}{}", ansi(MoveTo(0, row)), " ".repeat(20));
+            assert!(screen[start..].contains(&fill), "row {row}: {screen:?}");
+        }
+        let last = format!("{}{} ", ansi(MoveTo(0, 4)), " ".repeat(18));
+        assert!(screen[start..].contains(&last), "{screen:?}");
+        assert!(!screen.contains(&format!("{last} ")), "{screen:?}");
+        // The clock and status line are drawn inverted too, then reset.
+        let status = screen.find("SPACE [Pa").expect("status");
+        assert!(start < status, "{screen:?}");
+        assert!(screen.ends_with(&reset), "{screen:?}");
+    }
+
+    #[test]
     fn draw_survives_a_zero_size_terminal() {
         let cache = unused_cache();
         let app = App::countdown(65, &cache, true, Instant::now());
         for size in [(0, 0), (1, 0), (0, 1), (1, 1)] {
             draw(&app, size);
+            draw_with(&app, size, true);
         }
     }
 
