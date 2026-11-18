@@ -27,18 +27,19 @@ const REVERSE: &[u8] = b"\x1b[7m";
 const CLEAR: &[u8] = b"\x1b[2J";
 /// crossterm's `Color::Green` as a foreground colour.
 const GREEN: &[u8] = b"\x1b[38;5;10m";
-/// A terminal asking for the cursor position (ConPTY does this on start).
+/// A terminal asking for the cursor position. ConPTY (Windows) asks on start
+/// and holds the child's output until it gets an answer.
 const CURSOR_QUERY: &[u8] = b"\x1b[6n";
+const CURSOR_ANSWER: &[u8] = b"\x1b[1;1R";
 
 /// `ti` running in a pseudo-terminal.
 struct Screen {
     child: Box<dyn Child + Send + Sync>,
-    writer: Box<dyn Write + Send>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
     _master: Box<dyn MasterPty + Send>,
     output: Arc<Mutex<Vec<u8>>>,
-    /// How much of `output` the `expect` calls so far have consumed.
+    /// How much of `output()` the `expect` calls so far have consumed.
     seen: usize,
-    cursor_queries_answered: usize,
     name: String,
     cache: PathBuf,
 }
@@ -59,6 +60,29 @@ fn count(haystack: &[u8], needle: &[u8]) -> usize {
         .windows(needle.len())
         .filter(|window| *window == needle)
         .count()
+}
+
+/// `output` without OSC sequences (`ESC ]` ... `BEL` or `ESC \\`), such as
+/// the window title ConPTY sets: their closing BEL isn't a bell. An
+/// unfinished sequence at the end is dropped until the rest arrives.
+fn strip_osc(output: &[u8]) -> Vec<u8> {
+    let mut clean = Vec::with_capacity(output.len());
+    let mut rest = output;
+    while let Some(start) = find(rest, b"\x1b]") {
+        clean.extend_from_slice(&rest[..start]);
+        let osc = &rest[start + 2..];
+        let end = osc.iter().enumerate().find_map(|(i, &byte)| match byte {
+            0x07 => Some(i + 1),
+            0x1b if osc.get(i + 1) == Some(&b'\\') => Some(i + 2),
+            _ => None,
+        });
+        match end {
+            Some(end) => rest = &osc[end..],
+            None => return clean,
+        }
+    }
+    clean.extend_from_slice(rest);
+    clean
 }
 
 impl Screen {
@@ -91,29 +115,40 @@ impl Screen {
         drop(pair.slave);
 
         let output = Arc::new(Mutex::new(Vec::new()));
+        let writer = Arc::new(Mutex::new(pair.master.take_writer().unwrap()));
         let mut reader = pair.master.try_clone_reader().unwrap();
-        let sink = Arc::clone(&output);
+        let (sink, answer) = (Arc::clone(&output), Arc::clone(&writer));
         thread::spawn(move || {
             let mut buf = [0; 4096];
+            let mut answered = 0;
             while let Ok(n @ 1..) = reader.read(&mut buf) {
-                sink.lock().unwrap().extend_from_slice(&buf[..n]);
+                let mut sink = sink.lock().unwrap();
+                sink.extend_from_slice(&buf[..n]);
+                // Answer right away, whatever the test is waiting for.
+                let queries = count(&sink, CURSOR_QUERY);
+                let mut writer = answer.lock().unwrap();
+                while answered < queries {
+                    let _ = writer.write_all(CURSOR_ANSWER);
+                    let _ = writer.flush();
+                    answered += 1;
+                }
             }
         });
 
         Self {
             child,
-            writer: pair.master.take_writer().unwrap(),
+            writer,
             _master: pair.master,
             output,
             seen: 0,
-            cursor_queries_answered: 0,
             name: name.to_owned(),
             cache,
         }
     }
 
+    /// Everything `ti` wrote so far, without OSC sequences.
     fn output(&self) -> Vec<u8> {
-        self.output.lock().unwrap().clone()
+        strip_osc(&self.output.lock().unwrap())
     }
 
     fn dump(&self) -> String {
@@ -122,20 +157,11 @@ impl Screen {
             .to_string()
     }
 
-    fn answer_cursor_queries(&mut self) {
-        let queries = count(&self.output(), CURSOR_QUERY);
-        while self.cursor_queries_answered < queries {
-            self.send(b"\x1b[1;1R");
-            self.cursor_queries_answered += 1;
-        }
-    }
-
     /// Waits until `needle` appears after everything `expect` matched
     /// before, and moves past it.
     fn expect(&mut self, needle: &[u8]) {
         let deadline = Instant::now() + DEADLINE;
         loop {
-            self.answer_cursor_queries();
             let output = self.output();
             if let Some(at) = find(&output[self.seen..], needle) {
                 self.seen += at + needle.len();
@@ -173,15 +199,15 @@ impl Screen {
     }
 
     fn send(&mut self, keys: &[u8]) {
-        self.writer.write_all(keys).unwrap();
-        self.writer.flush().unwrap();
+        let mut writer = self.writer.lock().unwrap();
+        writer.write_all(keys).unwrap();
+        writer.flush().unwrap();
     }
 
     /// Waits for `ti` to exit and returns its exit code.
     fn exit_code(&mut self) -> u32 {
         let deadline = Instant::now() + DEADLINE;
         loop {
-            self.answer_cursor_queries();
             if let Some(status) = self.child.try_wait().unwrap() {
                 return status.exit_code();
             }
@@ -229,6 +255,14 @@ impl Drop for Screen {
 }
 
 const SIZE: (u16, u16) = (120, 30);
+
+#[test]
+fn strip_osc_keeps_bells_outside_titles() {
+    assert_eq!(strip_osc(b"a\x1b]0;title\x07b\x07"), b"ab\x07");
+    assert_eq!(strip_osc(b"a\x1b]0;t\x1b\\b"), b"ab");
+    assert_eq!(strip_osc(b"a\x1b]0;unfinished"), b"a");
+    assert_eq!(strip_osc(b"\x07"), b"\x07");
+}
 /// 1 minute sessions, so a seeded cache decides when a phase ends; a long
 /// break of 15 minutes (900 seconds) after every 3rd session.
 const POMODORO: &[&str] = &[
