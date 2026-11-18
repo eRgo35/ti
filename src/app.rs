@@ -11,9 +11,14 @@ use crate::{
 pub enum Update {
     Unchanged,
     Changed,
-    /// A pomodoro phase ran out and the next one started.
-    PhaseEnded,
+    /// A pomodoro phase or the countdown ran out: ring the bell. The screen
+    /// flashes for `FLASH` (see `App::is_flashing`).
+    Alert,
 }
+
+/// How long the screen flashes after an alert, as a fallback for a muted
+/// terminal bell.
+pub const FLASH: Duration = Duration::from_secs(1);
 
 /// Timer behaviour without the terminal: keys, ticks, pomodoro phases and
 /// the cache. Every method takes `now` so it can be tested deterministically.
@@ -21,6 +26,11 @@ pub struct App<'a> {
     timer: Timer,
     pomodoro: Option<Pomodoro>,
     cache: &'a Cache,
+    /// Whether the last tick saw the countdown at 0, so finishing alerts
+    /// once, and a timer that starts finished never alerts.
+    was_finished: bool,
+    /// The end of the current flash, if any.
+    flash_until: Option<Instant>,
 }
 
 impl<'a> App<'a> {
@@ -34,9 +44,11 @@ impl<'a> App<'a> {
         };
 
         Self {
+            was_finished: timer.is_finished(),
             timer,
             pomodoro: None,
             cache,
+            flash_until: None,
         }
     }
 
@@ -62,9 +74,11 @@ impl<'a> App<'a> {
         };
 
         Self {
+            was_finished: timer.is_finished(),
             timer,
             pomodoro: Some(pomodoro),
             cache,
+            flash_until: None,
         }
     }
 
@@ -76,8 +90,21 @@ impl<'a> App<'a> {
         self.pomodoro.as_ref()
     }
 
+    /// Whether the screen should be drawn flashing at `now`.
+    pub fn is_flashing(&self, now: Instant) -> bool {
+        self.flash_until.is_some_and(|until| now < until)
+    }
+
+    /// Time until the next tick is due: the next decrement or the end of a
+    /// flash, whichever comes first. `None` if nothing is due.
     pub fn until_next_tick(&self, now: Instant) -> Option<Duration> {
-        self.timer.until_next_tick(now)
+        let flash = self
+            .flash_until
+            .map(|until| until.saturating_duration_since(now));
+        match (self.timer.until_next_tick(now), flash) {
+            (Some(timer), Some(flash)) => Some(timer.min(flash)),
+            (timer, flash) => timer.or(flash),
+        }
     }
 
     /// Advances the countdown to `now`. In pomodoro mode a finished phase
@@ -96,12 +123,23 @@ impl<'a> App<'a> {
             while let Some(ended) = self.timer.finished_at() {
                 self.next_phase(ended);
                 self.timer.tick(now);
-                update = Update::PhaseEnded;
+                update = Update::Alert;
             }
+        } else if self.timer.is_finished() && !self.was_finished {
+            update = Update::Alert;
         }
+        self.was_finished = self.timer.is_finished();
 
+        // Only a change of the timer is saved, not the end of a flash.
         if update != Update::Unchanged {
             self.save();
+        }
+
+        if update == Update::Alert {
+            self.flash_until = Some(now + FLASH);
+        } else if self.flash_until.is_some_and(|until| now >= until) {
+            self.flash_until = None;
+            update = Update::Changed;
         }
         update
     }
@@ -115,6 +153,8 @@ impl<'a> App<'a> {
             ' ' => self.timer.toggle(now),
             'r' => {
                 self.timer.reset(now);
+                // A reset countdown alerts again when it finishes.
+                self.was_finished = self.timer.is_finished();
                 if self.pomodoro.is_some() {
                     // Keep the phase and round for the next run.
                     self.save();
@@ -244,10 +284,11 @@ mod tests {
         assert_eq!(c.contents(), None, "nothing is written before a tick");
         assert_eq!(app.tick(t0 + secs(1)), Update::Changed);
         assert_eq!(c.contents().as_deref(), Some("1"));
-        assert_eq!(app.tick(t0 + secs(2)), Update::Changed);
+        assert_eq!(app.tick(t0 + secs(2)), Update::Alert);
         assert_eq!(c.contents().as_deref(), Some("0"));
         assert!(app.timer().is_finished());
-        assert_eq!(app.tick(t0 + secs(9)), Update::Unchanged);
+        assert_eq!(app.tick(t0 + secs(9)), Update::Changed, "the flash ends");
+        assert_eq!(app.tick(t0 + secs(10)), Update::Unchanged);
     }
 
     #[test]
@@ -322,13 +363,13 @@ mod tests {
         let expected = [
             (1, Update::Changed, "WORK 1/2", 2, "work 1 2"),
             (2, Update::Changed, "WORK 1/2", 1, "work 1 1"),
-            (3, Update::PhaseEnded, "BREAK 1/2", 1, "break 1 1"),
-            (4, Update::PhaseEnded, "WORK 2/2", 3, "work 2 3"),
+            (3, Update::Alert, "BREAK 1/2", 1, "break 1 1"),
+            (4, Update::Alert, "WORK 2/2", 3, "work 2 3"),
             (5, Update::Changed, "WORK 2/2", 2, "work 2 2"),
             (6, Update::Changed, "WORK 2/2", 1, "work 2 1"),
-            (7, Update::PhaseEnded, "LONG BREAK", 2, "long-break 2 2"),
+            (7, Update::Alert, "LONG BREAK", 2, "long-break 2 2"),
             (8, Update::Changed, "LONG BREAK", 1, "long-break 2 1"),
-            (9, Update::PhaseEnded, "WORK 1/2", 3, "work 1 3"),
+            (9, Update::Alert, "WORK 1/2", 3, "work 1 3"),
         ];
         for (second, update, phase, countdown, cache) in expected {
             let now = t0 + secs(second);
@@ -404,7 +445,7 @@ mod tests {
         let mut app = App::pomodoro(config, &c.0, false, t0);
         assert_eq!(label(&app), "BREAK 2/4");
         assert_eq!(app.timer().countdown(), 1);
-        assert_eq!(app.tick(t0 + secs(1)), Update::PhaseEnded);
+        assert_eq!(app.tick(t0 + secs(1)), Update::Alert);
         assert_eq!(label(&app), "WORK 3/4");
         // Reset goes back to the full length of the resumed phase.
         app.key('r', t0 + secs(1));
@@ -465,14 +506,14 @@ mod tests {
         // A loop that wakes up at 5.5s must land in WORK 2/2 with 2s left
         // (the next decrement at 6s), and report one phase change.
         let late = t0 + Duration::from_millis(5500);
-        assert_eq!(app.tick(late), Update::PhaseEnded);
+        assert_eq!(app.tick(late), Update::Alert);
         assert_eq!(label(&app), "WORK 2/2");
         assert_eq!(app.timer().countdown(), 2);
         assert_eq!(app.until_next_tick(late), Some(Duration::from_millis(500)));
         assert_eq!(c.contents().as_deref(), Some("work 2 2"));
         // Late by more than a whole cycle: 3+1+3+2 = 9s per cycle.
         let very_late = t0 + secs(9 + 9 + 1);
-        assert_eq!(app.tick(very_late), Update::PhaseEnded);
+        assert_eq!(app.tick(very_late), Update::Alert);
         assert_eq!(label(&app), "WORK 1/2");
         assert_eq!(app.timer().countdown(), 2);
     }
@@ -484,10 +525,99 @@ mod tests {
         let mut app = App::pomodoro(CONFIG, &c.0, false, t0);
         // The pause lands exactly when WORK 1/2 runs out.
         app.key('p', t0 + secs(3));
-        assert_eq!(app.tick(t0 + secs(3)), Update::PhaseEnded);
+        assert_eq!(app.tick(t0 + secs(3)), Update::Alert);
         assert_eq!(label(&app), "BREAK 1/2");
         assert!(!app.timer().is_finished());
-        assert_eq!(app.tick(t0 + secs(4)), Update::PhaseEnded);
+        assert_eq!(app.tick(t0 + secs(4)), Update::Alert);
         assert_eq!(label(&app), "WORK 2/2");
+    }
+
+    // --- alerts ---
+
+    #[test]
+    fn countdown_finish_alerts_and_flashes_for_a_second() {
+        let c = TempCache::new("alert_cd");
+        let t0 = Instant::now();
+        let mut app = App::countdown(2, &c.0, false, t0);
+        assert_eq!(app.tick(t0 + secs(1)), Update::Changed);
+        assert!(!app.is_flashing(t0 + secs(1)));
+        assert_eq!(app.tick(t0 + secs(2)), Update::Alert);
+        assert!(app.is_flashing(t0 + secs(2)));
+        assert!(app.is_flashing(t0 + Duration::from_millis(2999)));
+        assert!(!app.is_flashing(t0 + secs(3)));
+    }
+
+    #[test]
+    fn finished_at_start_does_not_alert() {
+        let c = TempCache::new("alert_zero");
+        let t0 = Instant::now();
+        let mut app = App::countdown(0, &c.0, false, t0);
+        assert!(app.timer().is_finished());
+        assert_eq!(app.tick(t0 + secs(1)), Update::Unchanged);
+        assert!(!app.is_flashing(t0 + secs(1)));
+    }
+
+    #[test]
+    fn skip_does_not_alert() {
+        let c = TempCache::new("alert_skip");
+        let t0 = Instant::now();
+        let mut app = App::pomodoro(CONFIG, &c.0, false, t0);
+        app.key('n', t0);
+        assert_eq!(app.tick(t0), Update::Unchanged);
+        assert!(!app.is_flashing(t0));
+    }
+
+    #[test]
+    fn reset_then_finish_alerts_again() {
+        let c = TempCache::new("alert_again");
+        let t0 = Instant::now();
+        let mut app = App::countdown(1, &c.0, false, t0);
+        assert_eq!(app.tick(t0 + secs(1)), Update::Alert);
+        assert_eq!(app.tick(t0 + secs(2)), Update::Changed, "the flash ends");
+        app.key('r', t0 + secs(5));
+        assert_eq!(app.tick(t0 + secs(6)), Update::Alert);
+    }
+
+    #[test]
+    fn pause_on_countdown_end_alerts() {
+        let c = TempCache::new("alert_pause_end");
+        let t0 = Instant::now();
+        let mut app = App::countdown(2, &c.0, false, t0);
+        // The pause lands exactly when the countdown runs out.
+        app.key('p', t0 + secs(2));
+        assert_eq!(app.tick(t0 + secs(2)), Update::Alert);
+    }
+
+    #[test]
+    fn flash_ends_after_a_second_while_paused() {
+        let c = TempCache::new("alert_flash_paused");
+        let t0 = Instant::now();
+        let mut app = App::pomodoro(CONFIG, &c.0, false, t0);
+        assert_eq!(app.tick(t0 + secs(3)), Update::Alert);
+        let paused = t0 + Duration::from_millis(3200);
+        app.key('p', paused);
+        // The loop must wake up for the end of the flash.
+        assert_eq!(
+            app.until_next_tick(paused),
+            Some(Duration::from_millis(800))
+        );
+        assert_eq!(app.tick(t0 + secs(4)), Update::Changed);
+        assert!(!app.is_flashing(t0 + secs(4)));
+        assert_eq!(app.until_next_tick(t0 + secs(4)), None);
+        assert_eq!(app.tick(t0 + secs(5)), Update::Unchanged);
+    }
+
+    #[test]
+    fn flash_end_does_not_rewrite_a_deleted_cache() {
+        let c = TempCache::new("alert_flash_cache");
+        let t0 = Instant::now();
+        let mut app = App::countdown(1, &c.0, false, t0);
+        assert_eq!(app.tick(t0 + secs(1)), Update::Alert);
+        // Reset, then pause: the cache is deleted and nothing ticks.
+        app.key('r', t0 + Duration::from_millis(1100));
+        app.key('p', t0 + Duration::from_millis(1200));
+        assert_eq!(c.contents(), None);
+        app.tick(t0 + secs(2));
+        assert_eq!(c.contents(), None);
     }
 }

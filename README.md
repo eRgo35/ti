@@ -68,9 +68,11 @@ When `TIME` is given, it replaces the `-H`/`-M`/`-S` flags entirely. Parts that 
 
 An invalid `TIME` (non-numeric, more than three components, or too large) is rejected with a usage error and exit code 2.
 
+When the countdown reaches 0, the terminal bell rings and the screen flashes (it's drawn in reverse video for a second), so you notice even with the bell muted. A timer that starts at 0 doesn't ring.
+
 ### Pomodoro
 
-`ti pomodoro` runs work sessions and breaks in a loop: 25 minutes of work, a 5 minute break, and a 15 minute long break after every 4th work session. When a phase ends, the terminal bell rings and the next phase starts on its own.
+`ti pomodoro` runs work sessions and breaks in a loop: 25 minutes of work, a 5 minute break, and a 15 minute long break after every 4th work session. When a phase ends, the terminal bell rings, the screen flashes for a second (in case the bell is muted), and the next phase starts on its own. Skipping with `N` doesn't ring.
 
 ```sh
 ti pomodoro                                  # 25 / 5 / 15, long break every 4 sessions
@@ -88,6 +90,8 @@ ti pomodoro --long-break 30 --rounds 3       # long break after every 3rd sessio
 All values must be at least 1. `--font`, `--cache` and `--clear` work as for the normal timer and can go before or after `pomodoro`. The countdown options (`TIME`, `-H`, `-M`, `-S`) cannot be combined with `pomodoro`.
 
 The status line shows the phase and round, for example `WORK 2/4` or `LONG BREAK`. Breaks are drawn in green.
+
+Time the computer spends asleep doesn't count on Linux and macOS: after waking, the phase continues where it was. On Windows it does count, so the timer catches up and may skip the phases that ended during sleep. `Ctrl+Z` doesn't suspend `ti` (it's an ignored key).
 
 ### Key bindings
 
@@ -112,6 +116,7 @@ While the timer runs, the remaining time in seconds is saved every second to `ti
 - `R` resets the countdown and deletes the cache file. A running timer writes the file again on its next tick.
 - Quitting with `Q` or `Ctrl+C` keeps the cache file.
 - A timer that has finished starts fresh the next time.
+- Sleep works as for the pomodoro: time asleep doesn't count on Linux and macOS, but does on Windows.
 
 A pomodoro session is cached separately, in `ti_pomodoro.tmp` (or the `--cache` file), as its phase, round and remaining seconds. Starting `ti pomodoro` again continues the same phase and round; `--clear` starts a new session at the first work session. `R` restarts the current phase and keeps the session cached. A saved session whose round is beyond `--rounds` is ignored.
 

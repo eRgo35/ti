@@ -2,7 +2,8 @@
 //!
 //! Every case here exits before the interactive screen opens: when the tests
 //! run inside a real terminal, the screen would take it over and wait for
-//! keys. The interactive behaviour is unit-tested in `src/app.rs`.
+//! keys. The interactive behaviour is unit-tested in `src/app.rs` and driven
+//! in a pseudo-terminal by `tests/screen.rs`.
 
 use std::{
     env, fs,

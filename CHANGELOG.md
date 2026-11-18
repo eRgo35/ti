@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-18
+
+### Added
+- Every alert also flashes the screen: when the bell rings, the whole screen is drawn in reverse video for a second, so a muted or disabled bell doesn't hide it.
+- A plain countdown now rings the bell and flashes when it reaches 0 (before, only pomodoro phase changes rang).
+
+### Changed
+- Tests: `tests/screen.rs` runs the real binary in a pseudo-terminal on Linux, macOS and Windows and covers the screen checks that used to be done by hand (countdown, keys, exit codes, cursor restore, pomodoro phase change with bell, flash and green break, cache resume, tiny terminal). Uses `portable-pty` as a dev-dependency.
+- Dependabot keeps the pinned GitHub Actions and the crates up to date.
+- The Linux gnu binary (`x86_64-unknown-linux-gnu`) is built in a `manylinux_2_28` container and runs on glibc 2.28 or newer (1.6.2 needed 2.34). Both Linux release builds run on `ubuntu-24.04` instead of `ubuntu-22.04`.
+
+### Documentation
+- README: what a running timer does while the computer sleeps (it pauses on Linux and macOS and catches up on Windows), and that `Ctrl+Z` doesn't suspend `ti`.
+
 ## [1.6.2] - 2026-11-11
 
 First published release of the 1.6 line: `ti pomodoro` and the dependency updates from 1.6.0 below.

@@ -25,12 +25,18 @@ pr-run-mode = "upload"
 # Everything except the per-target builds below (plan, installers, release).
 global = "ubuntu-24.04"
 
-# Build musl inside manylinux (dnf, not apt), like dist itself does. On a
-# plain runner dist installs musl-tools with apt, and GitHub's Ubuntu mirror
-# was unreachable for the 1.6.0 and 1.6.1 releases.
-[dist.github-custom-runners.x86_64-unknown-linux-musl.container]
-image = "quay.io/pypa/manylinux_2_28_x86_64"
-host = "x86_64-unknown-linux-musl"
+# Build both Linux targets inside manylinux_2_28 on an ubuntu-24.04 host,
+# like dist itself does. musl: on a plain runner dist installs musl-tools with
+# apt, and GitHub's Ubuntu mirror was unreachable for the 1.6.0 and 1.6.1
+# releases. gnu: the binary links against the container's glibc 2.28 instead
+# of the runner's. Without `runner`, container jobs run on ubuntu-22.04.
+[dist.github-custom-runners.x86_64-unknown-linux-gnu]
+runner = "ubuntu-24.04"
+container = { image = "quay.io/pypa/manylinux_2_28_x86_64", host = "x86_64-unknown-linux-musl" }
+
+[dist.github-custom-runners.x86_64-unknown-linux-musl]
+runner = "ubuntu-24.04"
+container = { image = "quay.io/pypa/manylinux_2_28_x86_64", host = "x86_64-unknown-linux-musl" }
 
 # Actions pinned to commit SHAs, resolved from each release tag.
 [dist.github-action-commits]
