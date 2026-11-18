@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-18
+
 ### Added
 - Every alert also flashes the screen: when the bell rings, the whole screen is drawn in reverse video for a second, so a muted or disabled bell doesn't hide it.
 - A plain countdown now rings the bell and flashes when it reaches 0 (before, only pomodoro phase changes rang).
